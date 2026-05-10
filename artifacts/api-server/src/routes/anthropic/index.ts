@@ -1,9 +1,13 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { db, conversations as conversationsTable, messages as messagesTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
+import {
+  db,
+  conversations as conversationsTable,
+  messages as messagesTable,
+  projectsTable,
+} from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import {
-  CreateAnthropicConversationBody,
   GetAnthropicConversationParams,
   DeleteAnthropicConversationParams,
   ListAnthropicMessagesParams,
@@ -13,43 +17,74 @@ import {
 
 const router: IRouter = Router();
 
-router.get("/anthropic/conversations", async (_req, res): Promise<void> => {
-  const convs = await db
+/**
+ * Verify that a conversation belongs to the authenticated user
+ * by checking the linked project's userId.
+ * Returns the conversation row or null if not found / not owned.
+ */
+async function getOwnedConversation(conversationId: number, userId: string) {
+  const [conv] = await db
     .select()
     .from(conversationsTable)
-    .orderBy(conversationsTable.createdAt);
-  res.json(convs);
-});
+    .where(eq(conversationsTable.id, conversationId));
 
-router.post("/anthropic/conversations", async (req, res): Promise<void> => {
-  const parsed = CreateAnthropicConversationBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+  if (!conv) return null;
+
+  // Verify ownership through the projects table
+  const [project] = await db
+    .select({ id: projectsTable.id })
+    .from(projectsTable)
+    .where(
+      and(
+        eq(projectsTable.conversationId, conversationId),
+        eq(projectsTable.userId, userId),
+      ),
+    );
+
+  return project ? conv : null;
+}
+
+router.get("/anthropic/conversations", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Nicht angemeldet" });
     return;
   }
 
-  const [conv] = await db
-    .insert(conversationsTable)
-    .values({ title: parsed.data.title })
-    .returning();
+  // Return only conversations belonging to the current user's projects
+  const rows = await db
+    .select({
+      id: conversationsTable.id,
+      title: conversationsTable.title,
+      createdAt: conversationsTable.createdAt,
+    })
+    .from(conversationsTable)
+    .innerJoin(
+      projectsTable,
+      and(
+        eq(projectsTable.conversationId, conversationsTable.id),
+        eq(projectsTable.userId, req.user.id),
+      ),
+    )
+    .orderBy(conversationsTable.createdAt);
 
-  res.status(201).json(conv);
+  res.json(rows);
 });
 
 router.get(
   "/anthropic/conversations/:id",
   async (req, res): Promise<void> => {
+    if (!req.isAuthenticated()) {
+      res.status(401).json({ error: "Nicht angemeldet" });
+      return;
+    }
+
     const params = GetAnthropicConversationParams.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: params.error.message });
       return;
     }
 
-    const [conv] = await db
-      .select()
-      .from(conversationsTable)
-      .where(eq(conversationsTable.id, params.data.id));
-
+    const conv = await getOwnedConversation(params.data.id, req.user.id);
     if (!conv) {
       res.status(404).json({ error: "Konversation nicht gefunden" });
       return;
@@ -62,54 +97,75 @@ router.get(
       .orderBy(messagesTable.createdAt);
 
     res.json({ ...conv, messages: msgs });
-  }
+  },
 );
 
 router.delete(
   "/anthropic/conversations/:id",
   async (req, res): Promise<void> => {
+    if (!req.isAuthenticated()) {
+      res.status(401).json({ error: "Nicht angemeldet" });
+      return;
+    }
+
     const params = DeleteAnthropicConversationParams.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: params.error.message });
       return;
     }
 
-    const [conv] = await db
-      .delete(conversationsTable)
-      .where(eq(conversationsTable.id, params.data.id))
-      .returning();
-
+    const conv = await getOwnedConversation(params.data.id, req.user.id);
     if (!conv) {
       res.status(404).json({ error: "Konversation nicht gefunden" });
       return;
     }
 
+    await db
+      .delete(conversationsTable)
+      .where(eq(conversationsTable.id, conv.id));
+
     res.sendStatus(204);
-  }
+  },
 );
 
 router.get(
   "/anthropic/conversations/:id/messages",
   async (req, res): Promise<void> => {
+    if (!req.isAuthenticated()) {
+      res.status(401).json({ error: "Nicht angemeldet" });
+      return;
+    }
+
     const params = ListAnthropicMessagesParams.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: params.error.message });
       return;
     }
 
+    const conv = await getOwnedConversation(params.data.id, req.user.id);
+    if (!conv) {
+      res.status(404).json({ error: "Konversation nicht gefunden" });
+      return;
+    }
+
     const msgs = await db
       .select()
       .from(messagesTable)
-      .where(eq(messagesTable.conversationId, params.data.id))
+      .where(eq(messagesTable.conversationId, conv.id))
       .orderBy(messagesTable.createdAt);
 
     res.json(msgs);
-  }
+  },
 );
 
 router.post(
   "/anthropic/conversations/:id/messages",
   async (req, res): Promise<void> => {
+    if (!req.isAuthenticated()) {
+      res.status(401).json({ error: "Nicht angemeldet" });
+      return;
+    }
+
     const params = SendAnthropicMessageParams.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: params.error.message });
@@ -122,11 +178,7 @@ router.post(
       return;
     }
 
-    const [conv] = await db
-      .select()
-      .from(conversationsTable)
-      .where(eq(conversationsTable.id, params.data.id));
-
+    const conv = await getOwnedConversation(params.data.id, req.user.id);
     if (!conv) {
       res.status(404).json({ error: "Konversation nicht gefunden" });
       return;
@@ -166,7 +218,7 @@ router.post(
       ) {
         fullResponse += event.delta.text;
         res.write(
-          `data: ${JSON.stringify({ content: event.delta.text })}\n\n`
+          `data: ${JSON.stringify({ content: event.delta.text })}\n\n`,
         );
       }
     }
@@ -179,7 +231,7 @@ router.post(
 
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
-  }
+  },
 );
 
 export default router;

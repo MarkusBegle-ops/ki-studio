@@ -183,6 +183,14 @@ router.get("/projects/:id/preview", async (req, res): Promise<void> => {
     return;
   }
 
+  // Unpublished projects: only the owner may preview them
+  if (!project.isPublished) {
+    if (!req.isAuthenticated() || req.user.id !== project.userId) {
+      res.status(404).json({ error: "Projekt nicht gefunden" });
+      return;
+    }
+  }
+
   if (!project.htmlCode) {
     res.setHeader("Content-Type", "text/html");
     res.send(`<!DOCTYPE html>
