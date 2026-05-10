@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "KI Studio"
+version = "1.0.0"
+id = "artifacts/ki-studio"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18267
+
+[services.development]
+run = "pnpm --filter @workspace/ki-studio run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/ki-studio", "run", "build" ]
+publicDir = "artifacts/ki-studio/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18267"
+BASE_PATH = "/"
