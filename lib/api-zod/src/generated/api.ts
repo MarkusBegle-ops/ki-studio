@@ -232,6 +232,20 @@ export const LogoutMobileSessionResponse = zod.object({
 });
 
 /**
+ * @summary Analyze a URL and extract app description for cloning
+ */
+export const AnalyzeUrlBody = zod.object({
+  url: zod.string().url(),
+});
+
+export const AnalyzeUrlResponse = zod.object({
+  title: zod.string(),
+  description: zod.string(),
+  features: zod.array(zod.string()),
+  prompt: zod.string(),
+});
+
+/**
  * @summary List all conversations
  */
 export const ListAnthropicConversationsResponseItem = zod.object({

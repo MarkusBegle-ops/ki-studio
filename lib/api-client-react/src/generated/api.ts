@@ -17,6 +17,8 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AnalyzeUrlInput,
+  AnalyzeUrlResult,
   AnthropicConversation,
   AnthropicConversationInput,
   AnthropicConversationWithMessages,
@@ -1398,6 +1400,92 @@ export const useLogoutMobileSession = <
   TContext
 > => {
   return useMutation(getLogoutMobileSessionMutationOptions(options));
+};
+
+/**
+ * @summary Analyze a URL and extract app description for cloning
+ */
+export const getAnalyzeUrlUrl = () => {
+  return `/api/analyze-url`;
+};
+
+export const analyzeUrl = async (
+  analyzeUrlInput: AnalyzeUrlInput,
+  options?: RequestInit,
+): Promise<AnalyzeUrlResult> => {
+  return customFetch<AnalyzeUrlResult>(getAnalyzeUrlUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(analyzeUrlInput),
+  });
+};
+
+export const getAnalyzeUrlMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof analyzeUrl>>,
+    TError,
+    { data: BodyType<AnalyzeUrlInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof analyzeUrl>>,
+  TError,
+  { data: BodyType<AnalyzeUrlInput> },
+  TContext
+> => {
+  const mutationKey = ["analyzeUrl"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof analyzeUrl>>,
+    { data: BodyType<AnalyzeUrlInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return analyzeUrl(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AnalyzeUrlMutationResult = NonNullable<
+  Awaited<ReturnType<typeof analyzeUrl>>
+>;
+export type AnalyzeUrlMutationBody = BodyType<AnalyzeUrlInput>;
+export type AnalyzeUrlMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Analyze a URL and extract app description for cloning
+ */
+export const useAnalyzeUrl = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof analyzeUrl>>,
+    TError,
+    { data: BodyType<AnalyzeUrlInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof analyzeUrl>>,
+  TError,
+  { data: BodyType<AnalyzeUrlInput> },
+  TContext
+> => {
+  return useMutation(getAnalyzeUrlMutationOptions(options));
 };
 
 /**

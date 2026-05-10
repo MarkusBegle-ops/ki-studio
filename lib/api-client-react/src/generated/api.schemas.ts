@@ -85,6 +85,17 @@ export interface AnthropicConversationWithMessages {
   messages: AnthropicMessage[];
 }
 
+export interface AnalyzeUrlInput {
+  url: string;
+}
+
+export interface AnalyzeUrlResult {
+  title: string;
+  description: string;
+  features: string[];
+  prompt: string;
+}
+
 export interface AnthropicError {
   error: string;
 }

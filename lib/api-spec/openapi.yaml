@@ -342,6 +342,37 @@ paths:
               schema:
                 $ref: '#/components/schemas/LogoutSuccess'
 
+  /analyze-url:
+    post:
+      operationId: analyzeUrl
+      tags: [projects]
+      summary: Analyze a URL and extract app description for cloning
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyzeUrlInput"
+      responses:
+        "200":
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyzeUrlResult"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          description: Could not fetch or analyze URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /anthropic/conversations:
     get:
       operationId: listAnthropicConversations
@@ -630,6 +661,34 @@ components:
         - title
         - createdAt
         - messages
+    AnalyzeUrlInput:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+      required:
+        - url
+
+    AnalyzeUrlResult:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+        prompt:
+          type: string
+      required:
+        - title
+        - description
+        - features
+        - prompt
+
     AnthropicError:
       type: object
       properties:
