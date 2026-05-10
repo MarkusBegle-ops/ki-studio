@@ -7,7 +7,7 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import NewProject from "@/pages/new-project";
 import ProjectEditor from "@/pages/project-editor";
-import { Sparkles, LogIn } from "lucide-react";
+import { Sparkles, LogIn, Zap, Eye, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const queryClient = new QueryClient();
@@ -29,9 +29,11 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background dark">
-        <div className="flex flex-col items-center gap-4">
-          <Sparkles className="h-10 w-10 text-primary animate-pulse" />
-          <p className="text-muted-foreground text-sm">Wird geladen…</p>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+            <Sparkles className="h-5 w-5 text-primary animate-pulse" />
+          </div>
+          <p className="text-muted-foreground text-xs tracking-widest uppercase">Lädt…</p>
         </div>
       </div>
     );
@@ -39,57 +41,73 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen flex flex-col bg-background text-foreground dark">
-        <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur">
-          <div className="container flex h-14 max-w-screen-2xl items-center">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" />
-              <span className="font-bold tracking-tight text-lg">KI Studio</span>
+      <div className="min-h-screen flex flex-col bg-background text-foreground dark overflow-hidden relative">
+        {/* Ambient orbs */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="orb-1 absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[120px]" />
+          <div className="orb-2 absolute -bottom-60 -right-40 w-[700px] h-[700px] rounded-full bg-primary/4 blur-[140px]" />
+          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[400px] h-[400px] rounded-full bg-blue-600/3 blur-[100px]" />
+        </div>
+
+        {/* Dot grid */}
+        <div className="absolute inset-0 dot-grid opacity-40 pointer-events-none" />
+
+        {/* Header */}
+        <header className="relative z-10 w-full border-b border-border/40 bg-background/60 backdrop-blur">
+          <div className="container flex h-14 max-w-screen-xl items-center">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+              </div>
+              <span className="font-semibold tracking-tight">KI Studio</span>
             </div>
           </div>
         </header>
-        <main className="flex-1 flex items-center justify-center px-4">
-          <div className="max-w-md w-full text-center space-y-8">
-            <div className="space-y-4">
-              <div className="flex justify-center">
-                <div className="relative">
-                  <div className="w-20 h-20 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                    <Sparkles className="h-10 w-10 text-primary" />
-                  </div>
-                </div>
+
+        {/* Hero */}
+        <main className="relative z-10 flex-1 flex items-center justify-center px-4 py-20">
+          <div className="max-w-xl w-full text-center space-y-10">
+            <div className="space-y-5 animate-fade-in-up">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-primary/20 bg-primary/5 text-primary text-xs font-medium tracking-wide">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                Kostenlos · Kein Code nötig · Sofort verfügbar
               </div>
-              <h1 className="text-4xl font-bold tracking-tight">KI Studio</h1>
-              <p className="text-muted-foreground text-lg leading-relaxed">
-                Beschreibe deine App — die KI baut sie für dich.
-                <br />
-                Keine Programmierkenntnisse erforderlich.
+              <h1 className="text-5xl font-bold tracking-tight leading-[1.1]">
+                Deine Idee.<br />
+                <span className="text-primary">KI baut sie.</span>
+              </h1>
+              <p className="text-muted-foreground text-lg leading-relaxed max-w-md mx-auto">
+                Beschreibe in natürlicher Sprache, was du brauchst — und erhalte in Sekunden eine fertige Web-App.
               </p>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3 animate-fade-in-up animate-fade-in-up-delay-1">
               <Button
                 onClick={login}
                 size="lg"
-                className="w-full gap-2 text-base h-12"
+                className="w-full gap-2.5 text-base h-12 font-medium glow-primary-sm hover:glow-primary transition-all"
                 data-testid="button-login"
               >
-                <LogIn className="h-5 w-5" />
-                Anmelden und loslegen
+                <LogIn className="h-4.5 w-4.5" />
+                Mit Replit anmelden
               </Button>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground/60">
                 Deine Projekte sind privat und nur für dich sichtbar.
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-4 pt-4">
+            <div className="grid grid-cols-3 gap-3 animate-fade-in-up animate-fade-in-up-delay-2">
               {[
-                { icon: "✦", label: "KI generiert Code" },
-                { icon: "⬡", label: "Live-Vorschau" },
-                { icon: "↑", label: "Ein-Klick-Publish" },
-              ].map((f) => (
-                <div key={f.label} className="flex flex-col items-center gap-2 p-3 rounded-lg border border-border/40 bg-card/50">
-                  <span className="text-primary text-xl">{f.icon}</span>
-                  <span className="text-xs text-muted-foreground text-center leading-tight">{f.label}</span>
+                { icon: Zap, label: "KI generiert", desc: "vollständigen Code" },
+                { icon: Eye, label: "Live-Vorschau", desc: "in Echtzeit" },
+                { icon: Globe, label: "Veröffentlichen", desc: "mit einem Klick" },
+              ].map(({ icon: Icon, label, desc }) => (
+                <div key={label} className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border/50 bg-card/40 backdrop-blur-sm hover:border-primary/20 hover:bg-card/60 transition-all">
+                  <Icon className="h-5 w-5 text-primary/80" />
+                  <div>
+                    <p className="text-xs font-semibold text-foreground/90">{label}</p>
+                    <p className="text-xs text-muted-foreground">{desc}</p>
+                  </div>
                 </div>
               ))}
             </div>
