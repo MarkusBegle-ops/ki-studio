@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, count, isNotNull } from "drizzle-orm";
+import { eq, desc, count, isNotNull, and } from "drizzle-orm";
 import { db, projectsTable, conversations as conversationsTable, messages as messagesTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import {
@@ -13,19 +13,27 @@ import {
   PublishProjectParams,
   PreviewProjectParams,
 } from "@workspace/api-zod";
-import { logger } from "../../lib/logger";
 
 const router: IRouter = Router();
 
 router.get("/projects", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Nicht angemeldet" });
+    return;
+  }
   const projects = await db
     .select()
     .from(projectsTable)
+    .where(eq(projectsTable.userId, req.user.id))
     .orderBy(desc(projectsTable.updatedAt));
   res.json(projects);
 });
 
 router.post("/projects", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Nicht angemeldet" });
+    return;
+  }
   const parsed = CreateProjectBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -35,6 +43,7 @@ router.post("/projects", async (req, res): Promise<void> => {
   const [project] = await db
     .insert(projectsTable)
     .values({
+      userId: req.user.id,
       title: parsed.data.title,
       description: parsed.data.description,
     })
@@ -44,21 +53,29 @@ router.post("/projects", async (req, res): Promise<void> => {
 });
 
 router.get("/projects/stats/summary", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Nicht angemeldet" });
+    return;
+  }
+  const userId = req.user.id;
+
   const [totalRow] = await db
     .select({ count: count() })
-    .from(projectsTable);
+    .from(projectsTable)
+    .where(eq(projectsTable.userId, userId));
   const [publishedRow] = await db
     .select({ count: count() })
     .from(projectsTable)
-    .where(eq(projectsTable.isPublished, true));
+    .where(and(eq(projectsTable.userId, userId), eq(projectsTable.isPublished, true)));
   const [withCodeRow] = await db
     .select({ count: count() })
     .from(projectsTable)
-    .where(isNotNull(projectsTable.htmlCode));
+    .where(and(eq(projectsTable.userId, userId), isNotNull(projectsTable.htmlCode)));
 
   const recentProjects = await db
     .select()
     .from(projectsTable)
+    .where(eq(projectsTable.userId, userId))
     .orderBy(desc(projectsTable.updatedAt))
     .limit(5);
 
@@ -71,6 +88,10 @@ router.get("/projects/stats/summary", async (req, res): Promise<void> => {
 });
 
 router.get("/projects/:id", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Nicht angemeldet" });
+    return;
+  }
   const params = GetProjectParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -80,7 +101,7 @@ router.get("/projects/:id", async (req, res): Promise<void> => {
   const [project] = await db
     .select()
     .from(projectsTable)
-    .where(eq(projectsTable.id, params.data.id));
+    .where(and(eq(projectsTable.id, params.data.id), eq(projectsTable.userId, req.user.id)));
 
   if (!project) {
     res.status(404).json({ error: "Projekt nicht gefunden" });
@@ -91,6 +112,10 @@ router.get("/projects/:id", async (req, res): Promise<void> => {
 });
 
 router.patch("/projects/:id", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Nicht angemeldet" });
+    return;
+  }
   const params = UpdateProjectParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -106,7 +131,7 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
   const [project] = await db
     .update(projectsTable)
     .set({ ...parsed.data, updatedAt: new Date() })
-    .where(eq(projectsTable.id, params.data.id))
+    .where(and(eq(projectsTable.id, params.data.id), eq(projectsTable.userId, req.user.id)))
     .returning();
 
   if (!project) {
@@ -118,6 +143,10 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/projects/:id", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Nicht angemeldet" });
+    return;
+  }
   const params = DeleteProjectParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -126,7 +155,7 @@ router.delete("/projects/:id", async (req, res): Promise<void> => {
 
   const [project] = await db
     .delete(projectsTable)
-    .where(eq(projectsTable.id, params.data.id))
+    .where(and(eq(projectsTable.id, params.data.id), eq(projectsTable.userId, req.user.id)))
     .returning();
 
   if (!project) {
@@ -183,6 +212,10 @@ router.get("/projects/:id/preview", async (req, res): Promise<void> => {
 });
 
 router.post("/projects/:id/generate", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Nicht angemeldet" });
+    return;
+  }
   const params = GenerateProjectParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -198,7 +231,7 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
   const [project] = await db
     .select()
     .from(projectsTable)
-    .where(eq(projectsTable.id, params.data.id));
+    .where(and(eq(projectsTable.id, params.data.id), eq(projectsTable.userId, req.user.id)));
 
   if (!project) {
     res.status(404).json({ error: "Projekt nicht gefunden" });
@@ -212,7 +245,6 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
   const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
   try {
-    // Get or create conversation for this project
     let conversationId = project.conversationId;
 
     if (!conversationId) {
@@ -227,14 +259,12 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
         .where(eq(projectsTable.id, project.id));
     }
 
-    // Save user message
     await db.insert(messagesTable).values({
       conversationId,
       role: "user",
       content: parsed.data.prompt,
     });
 
-    // Load message history
     const history = await db
       .select()
       .from(messagesTable)
@@ -282,20 +312,17 @@ Antworte AUSSCHLIESSLICH mit dem HTML-Code, ohne Erklärungen, ohne Markdown-Cod
       }
     }
 
-    // Clean up response — remove markdown code fences if AI added them
     let htmlCode = fullResponse.trim();
     if (htmlCode.startsWith("```")) {
       htmlCode = htmlCode.replace(/^```(?:html)?\n?/, "").replace(/\n?```$/, "").trim();
     }
 
-    // Save assistant message
     await db.insert(messagesTable).values({
       conversationId,
       role: "assistant",
       content: fullResponse,
     });
 
-    // Save generated code to project
     await db
       .update(projectsTable)
       .set({ htmlCode, updatedAt: new Date() })
@@ -311,6 +338,10 @@ Antworte AUSSCHLIESSLICH mit dem HTML-Code, ohne Erklärungen, ohne Markdown-Cod
 });
 
 router.post("/projects/:id/publish", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Nicht angemeldet" });
+    return;
+  }
   const params = PublishProjectParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -320,7 +351,7 @@ router.post("/projects/:id/publish", async (req, res): Promise<void> => {
   const [project] = await db
     .select()
     .from(projectsTable)
-    .where(eq(projectsTable.id, params.data.id));
+    .where(and(eq(projectsTable.id, params.data.id), eq(projectsTable.userId, req.user.id)));
 
   if (!project) {
     res.status(404).json({ error: "Projekt nicht gefunden" });
