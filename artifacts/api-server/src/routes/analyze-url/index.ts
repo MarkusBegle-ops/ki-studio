@@ -14,35 +14,67 @@ function isValidUrl(s: string): boolean {
   }
 }
 
+/** Remove control characters that the Anthropic API rejects (null bytes, etc.) */
+function sanitize(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, " ").replace(/\s{2,}/g, " ").trim();
+}
+
 function extractText(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<(nav|header|footer|aside)[^>]*>[\s\S]*?<\/(nav|header|footer|aside)>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s{2,}/g, " ")
-    .trim()
-    .slice(0, 14000);
+  return sanitize(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/<(nav|header|footer|aside)[^>]*>[\s\S]*?<\/(nav|header|footer|aside)>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .slice(0, 12000),
+  );
 }
 
 function extractTitle(html: string): string {
   const m = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-  return m ? m[1].trim() : "";
+  return sanitize(m ? m[1] : "");
 }
 
 function extractMetaDesc(html: string): string {
   const m =
     html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i) ??
     html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*name=["']description["']/i);
-  return m ? m[1].trim() : "";
+  return sanitize(m ? m[1] : "");
+}
+
+/** Convert any error to a user-friendly German message, hiding raw API errors */
+function friendlyError(err: unknown): string {
+  if (!(err instanceof Error)) return "Analyse fehlgeschlagen.";
+  const msg = err.message;
+  // Hide raw Anthropic/HTTP API error JSON blobs
+  if (msg.startsWith("{") || msg.includes('"type":"error"') || /^\d{3}\s*\{/.test(msg)) {
+    return "KI-Analyse fehlgeschlagen. Bitte erneut versuchen.";
+  }
+  if (msg.includes("aborted") || msg.includes("timeout") || msg.includes("abort")) {
+    return "Zeitüberschreitung — Seite antwortet zu langsam.";
+  }
+  if (msg.startsWith("HTTP ")) return `Seite nicht erreichbar (${msg}).`;
+  if (msg.includes("ECONNREFUSED") || msg.includes("ENOTFOUND") || msg.includes("EAI_AGAIN")) {
+    return "Domain nicht erreichbar.";
+  }
+  return msg.length > 120 ? msg.slice(0, 120) + "…" : msg;
+}
+
+/** Parse JSON from a possibly-partial or prefilled Claude response */
+function parseJson(raw: string): Record<string, unknown> {
+  const first = raw.indexOf("{");
+  const last = raw.lastIndexOf("}");
+  if (first === -1 || last === -1) throw new Error("Kein JSON in der Antwort");
+  return JSON.parse(raw.slice(first, last + 1));
 }
 
 export interface AnalysisResult {
@@ -53,108 +85,97 @@ export interface AnalysisResult {
   prompt: string;
 }
 
-/** Fetch one URL and run Claude analysis. Throws on error. */
+/** Fetch one URL and run Claude analysis. Throws with user-friendly messages. */
 async function analyzeOne(url: string): Promise<AnalysisResult> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
+  // ── 1. Fetch HTML ──────────────────────────────────────────────────────────
   let html: string;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 14000);
   try {
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; KIStudioBot/1.0)",
-        Accept: "text/html,application/xhtml+xml",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "de,en;q=0.9",
       },
+      redirect: "follow",
     });
     clearTimeout(timeout);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const ct = response.headers.get("content-type") ?? "";
-    if (!ct.includes("html")) throw new Error("Kein HTML zurückgegeben");
+    if (!ct.includes("html") && !ct.includes("text")) throw new Error("Kein HTML zurückgegeben");
     html = await response.text();
   } catch (err: unknown) {
     clearTimeout(timeout);
-    throw new Error(err instanceof Error ? err.message : String(err));
+    throw new Error(friendlyError(err));
   }
 
+  // ── 2. Extract text ────────────────────────────────────────────────────────
   const pageTitle = extractTitle(html);
   const metaDesc = extractMetaDesc(html);
   const bodyText = extractText(html);
 
-  const system = `Du bist ein App-Analyse-Experte. Analysiere den Inhalt einer Webseite und beschreibe detailliert, was für eine App oder Webseite das ist und welche Funktionen sie hat. Antworte ausschließlich mit einem JSON-Objekt in folgendem Format (kein Markdown, kein Text davor oder danach):
-{
-  "title": "kurzer prägnanter Projektname (auf Deutsch)",
-  "description": "ausführliche Beschreibung was diese App kann, wie sie aussieht, welche Features sie hat — mindestens 3 Sätze auf Deutsch",
-  "features": ["Feature 1", "Feature 2", "Feature 3"],
-  "prompt": "detaillierter Prompt auf Deutsch (mindestens 200 Wörter) der an eine KI gegeben werden kann um genau so eine App nachzubauen — beschreibe Layout, Farben, Features, Interaktionen, Datenmodell, UI-Komponenten, alles was nötig ist"
-}`;
+  // ── 3. Call Claude ─────────────────────────────────────────────────────────
+  const system =
+    'Du bist ein App-Analyse-Experte. Analysiere den Inhalt einer Webseite. ' +
+    'Antworte NUR mit einem JSON-Objekt, kein Markdown, kein Text davor oder danach. ' +
+    'Format: {"title":"...","description":"...","features":["..."],"prompt":"..."}';
 
-  const userMsg = `Analysiere diese Webseite:\n\nURL: ${url}\nSeiten-Titel: ${pageTitle}\nMeta-Beschreibung: ${metaDesc}\n\nSeiten-Inhalt:\n${bodyText}`;
+  const userMsg =
+    `URL: ${url}\n` +
+    `Titel: ${pageTitle || "(kein Titel)"}\n` +
+    `Beschreibung: ${metaDesc || "(keine)"}\n\n` +
+    `Seiteninhalt:\n${bodyText || "(kein Text extrahierbar)"}`;
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 2048,
-    system,
-    messages: [
-      { role: "user", content: userMsg },
-      { role: "assistant", content: '{"title":' },
-    ],
-  });
-
-  const continuation = message.content[0].type === "text" ? message.content[0].text : "";
-  const raw = '{"title":' + continuation;
-
-  let jsonToParse = raw;
   try {
-    const firstBrace = raw.indexOf("{");
-    const lastBrace = raw.lastIndexOf("}");
-    if (firstBrace !== -1 && lastBrace !== -1) {
-      jsonToParse = raw.slice(firstBrace, lastBrace + 1);
-    }
-  } catch { /* fall through to regex */ }
+    const message = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 2048,
+      system,
+      messages: [
+        { role: "user", content: userMsg },
+        { role: "assistant", content: '{"title":' },
+      ],
+    });
 
-  const jsonMatch = jsonToParse.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("KI-Antwort konnte nicht verarbeitet werden");
+    const continuation =
+      message.content[0].type === "text" ? message.content[0].text : "";
+    const parsed = parseJson('{"title":' + continuation);
 
-  const parsed = JSON.parse(jsonMatch[0]) as {
-    title?: string;
-    description?: string;
-    features?: string[];
-    prompt?: string;
-  };
-
-  return {
-    url,
-    title: parsed.title ?? pageTitle ?? "Neues Projekt",
-    description: parsed.description ?? "",
-    features: Array.isArray(parsed.features) ? parsed.features : [],
-    prompt: parsed.prompt ?? "",
-  };
+    return {
+      url,
+      title: typeof parsed.title === "string" ? parsed.title : pageTitle || "Neues Projekt",
+      description: typeof parsed.description === "string" ? parsed.description : "",
+      features: Array.isArray(parsed.features) ? (parsed.features as string[]) : [],
+      prompt: typeof parsed.prompt === "string" ? parsed.prompt : "",
+    };
+  } catch (err) {
+    throw new Error(friendlyError(err));
+  }
 }
 
-// ── Single URL (existing, backwards-compatible) ─────────────────────────────
+// ── Single URL (backwards-compatible) ────────────────────────────────────────
 router.post("/analyze-url", async (req, res): Promise<void> => {
   if (!req.isAuthenticated()) {
     res.status(401).json({ error: "Nicht angemeldet" });
     return;
   }
-
   const rawUrl = typeof req.body?.url === "string" ? req.body.url.trim() : "";
   if (!rawUrl || !isValidUrl(rawUrl)) {
     res.status(400).json({ error: "Ungültige oder fehlende URL." });
     return;
   }
-
   try {
-    const result = await analyzeOne(rawUrl);
-    res.json(result);
+    res.json(await analyzeOne(rawUrl));
   } catch (err) {
-    req.log.error({ err }, "Single analyze-url error");
-    res.status(422).json({ error: err instanceof Error ? err.message : "Analyse fehlgeschlagen." });
+    req.log.error({ err }, "analyze-url error");
+    res.status(422).json({ error: friendlyError(err) });
   }
 });
 
-// ── Multiple URLs in parallel ────────────────────────────────────────────────
+// ── Multiple URLs in parallel ─────────────────────────────────────────────────
 router.post("/analyze-urls", async (req, res): Promise<void> => {
   if (!req.isAuthenticated()) {
     res.status(401).json({ error: "Nicht angemeldet" });
@@ -179,20 +200,19 @@ router.post("/analyze-urls", async (req, res): Promise<void> => {
     return;
   }
 
-  // Run all analyses in parallel; collect successes + errors separately
   const settled = await Promise.allSettled(urls.map((u) => analyzeOne(u)));
 
   const results: Array<AnalysisResult | { url: string; error: string }> = settled.map(
     (s, i) => {
       if (s.status === "fulfilled") return s.value;
-      return { url: urls[i], error: s.reason instanceof Error ? s.reason.message : String(s.reason) };
+      return { url: urls[i], error: friendlyError(s.reason) };
     },
   );
 
   res.json({ results });
 });
 
-// ── Merge multiple analysis results into one combined prompt ─────────────────
+// ── Merge multiple analyses into one combined app ─────────────────────────────
 router.post("/analyze-urls/merge", async (req, res): Promise<void> => {
   if (!req.isAuthenticated()) {
     res.status(401).json({ error: "Nicht angemeldet" });
@@ -213,51 +233,43 @@ router.post("/analyze-urls/merge", async (req, res): Promise<void> => {
     return;
   }
 
-  // Truncate prompts so total input stays manageable for Claude
+  // Truncate individual prompts to keep total input size manageable
   const summary = valid
-    .map((a, i) =>
-      `App ${i + 1}: ${a.title}\nFeatures: ${a.features.slice(0, 10).join(", ")}\nBeschreibung: ${a.description.slice(0, 400)}\nPrompt-Auszug: ${a.prompt.slice(0, 600)}`,
+    .map(
+      (a, i) =>
+        `App ${i + 1}: ${sanitize(a.title)}\n` +
+        `Features: ${a.features.slice(0, 8).map(sanitize).join(", ")}\n` +
+        `Beschreibung: ${sanitize(a.description).slice(0, 300)}\n` +
+        `Prompt-Auszug: ${sanitize(a.prompt).slice(0, 500)}`,
     )
     .join("\n\n---\n\n");
-
-  const userMsg = `Führe diese ${valid.length} App-Analysen zu EINER kombinierten App zusammen. Gib NUR ein JSON-Objekt zurück, ohne Erklärungen:\n\n${summary}`;
 
   try {
     const message = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
       system:
-        "Du bist ein App-Architekt. Kombiniere mehrere App-Analysen zu einer einzigen, verbesserten App-Beschreibung. Antworte NUR mit rohem JSON — kein Markdown, keine Erklärungen, kein Text davor oder danach. Beginne deine Antwort direkt mit { und beende sie mit }.",
+        "Du bist ein App-Architekt. Kombiniere die Analysen mehrerer Apps zu EINER verbesserten App. " +
+        'Antworte NUR mit JSON, kein Markdown, kein erklärender Text. Format: {"title":"...","description":"...","features":["..."],"prompt":"..."}',
       messages: [
-        { role: "user", content: userMsg },
-        // Prefill: force Claude to start with { — guarantees JSON output
+        {
+          role: "user",
+          content:
+            `Führe diese ${valid.length} App-Analysen zu einer einzigen, besseren App zusammen:\n\n${summary}`,
+        },
         { role: "assistant", content: '{"title":' },
       ],
     });
 
-    // Reassemble full JSON (prefill + Claude continuation)
-    const continuation = message.content[0].type === "text" ? message.content[0].text : "";
-    const raw = '{"title":' + continuation;
-
-    let parsed: { title?: string; description?: string; features?: string[]; prompt?: string };
-    try {
-      // Find outermost JSON object
-      const firstBrace = raw.indexOf("{");
-      const lastBrace = raw.lastIndexOf("}");
-      if (firstBrace === -1 || lastBrace === -1) throw new Error("Kein JSON");
-      parsed = JSON.parse(raw.slice(firstBrace, lastBrace + 1));
-    } catch {
-      req.log.warn({ raw: raw.slice(0, 500) }, "Merge JSON parse failed, attempting extraction");
-      const m = raw.match(/\{[\s\S]*\}/);
-      if (!m) throw new Error("KI-Antwort enthält kein gültiges JSON");
-      parsed = JSON.parse(m[0]);
-    }
+    const continuation =
+      message.content[0].type === "text" ? message.content[0].text : "";
+    const parsed = parseJson('{"title":' + continuation);
 
     res.json({
-      title: parsed.title ?? "Kombiniertes Projekt",
-      description: parsed.description ?? "",
+      title: typeof parsed.title === "string" ? parsed.title : "Kombiniertes Projekt",
+      description: typeof parsed.description === "string" ? parsed.description : "",
       features: Array.isArray(parsed.features) ? parsed.features : [],
-      prompt: parsed.prompt ?? "",
+      prompt: typeof parsed.prompt === "string" ? parsed.prompt : "",
     });
   } catch (err) {
     req.log.error({ err }, "Merge analysis error");
