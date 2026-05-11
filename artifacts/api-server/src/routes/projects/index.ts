@@ -46,6 +46,7 @@ router.post("/projects", async (req, res): Promise<void> => {
       userId: req.user.id,
       title: parsed.data.title,
       description: parsed.data.description,
+      sourceUrl: parsed.data.sourceUrl ?? null,
     })
     .returning();
 

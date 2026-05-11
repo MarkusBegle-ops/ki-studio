@@ -524,6 +524,8 @@ components:
           type: ["string", "null"]
         conversationId:
           type: ["integer", "null"]
+        sourceUrl:
+          type: ["string", "null"]
         createdAt:
           type: string
           format: date-time
@@ -547,6 +549,9 @@ components:
         description:
           type: string
           minLength: 1
+        sourceUrl:
+          type: string
+          nullable: true
       required:
         - title
         - description

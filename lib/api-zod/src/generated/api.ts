@@ -26,6 +26,7 @@ export const ListProjectsResponseItem = zod.object({
   isPublished: zod.boolean(),
   publishedUrl: zod.string().nullish(),
   conversationId: zod.number().nullish(),
+  sourceUrl: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -38,6 +39,7 @@ export const ListProjectsResponse = zod.array(ListProjectsResponseItem);
 export const CreateProjectBody = zod.object({
   title: zod.string().min(1),
   description: zod.string().min(1),
+  sourceUrl: zod.string().nullish(),
 });
 
 /**
@@ -55,6 +57,7 @@ export const GetProjectResponse = zod.object({
   isPublished: zod.boolean(),
   publishedUrl: zod.string().nullish(),
   conversationId: zod.number().nullish(),
+  sourceUrl: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -81,6 +84,7 @@ export const UpdateProjectResponse = zod.object({
   isPublished: zod.boolean(),
   publishedUrl: zod.string().nullish(),
   conversationId: zod.number().nullish(),
+  sourceUrl: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -119,6 +123,7 @@ export const PublishProjectResponse = zod.object({
   isPublished: zod.boolean(),
   publishedUrl: zod.string().nullish(),
   conversationId: zod.number().nullish(),
+  sourceUrl: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -146,6 +151,7 @@ export const GetProjectsSummaryResponse = zod.object({
       isPublished: zod.boolean(),
       publishedUrl: zod.string().nullish(),
       conversationId: zod.number().nullish(),
+      sourceUrl: zod.string().nullish(),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
     }),

@@ -11,6 +11,7 @@ export const projectsTable = pgTable("projects", {
   isPublished: boolean("is_published").notNull().default(false),
   publishedUrl: text("published_url"),
   conversationId: integer("conversation_id"),
+  sourceUrl: text("source_url"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

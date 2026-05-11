@@ -131,7 +131,8 @@ export default function NewProject() {
   const { toast } = useToast();
   const uid = useId();
 
-  const [urls, setUrls] = useState<string[]>(["", ""]);
+  const [urls, setUrls] = useState<string[]>(["", ""])
+  const [lastAnalyzedUrls, setLastAnalyzedUrls] = useState<string[]>([]);
   const [results, setResults] = useState<UrlResult[]>([{ state: "idle" }, { state: "idle" }]);
   const [mergedResult, setMergedResult] = useState<AnalysisResult | null>(null);
   const [isMerging, setIsMerging] = useState(false);
@@ -223,6 +224,9 @@ export default function NewProject() {
       setResults(updated);
 
       const successCount = updated.filter(r => r.state === "success").length;
+      if (successCount > 0) {
+        setLastAnalyzedUrls(filledUrls.filter((_, i) => updated[i]?.state === "success"));
+      }
       toast({
         title: successCount > 0 ? `${successCount} URL${successCount > 1 ? "s" : ""} analysiert` : "Analyse abgeschlossen",
         description: successCount > 1
@@ -277,7 +281,12 @@ export default function NewProject() {
   const hasAnyFilled = urls.some(u => u.trim().length > 0);
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    createProject.mutate({ data: values }, {
+    const sourceUrl = lastAnalyzedUrls.length === 1
+      ? lastAnalyzedUrls[0]
+      : lastAnalyzedUrls.length > 1
+      ? lastAnalyzedUrls.join(", ")
+      : undefined;
+    createProject.mutate({ data: { ...values, sourceUrl } }, {
       onSuccess: (project) => {
         toast({ title: "Projekt erstellt" });
         setLocation(`/projekt/${project.id}`);

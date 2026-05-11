@@ -11,4 +11,5 @@ export interface ProjectInput {
   title: string;
   /** @minLength 1 */
   description: string;
+  sourceUrl?: string | null;
 }

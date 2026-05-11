@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Loader2, ArrowLeft, Send, Globe, Copy, Check,
-  AlertCircle, Download, ExternalLink, User, Bot, Sparkles,
+  AlertCircle, Download, ExternalLink, User, Bot, Sparkles, Link as LinkIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -38,6 +38,7 @@ export default function ProjectEditor() {
   const [isRefinement, setIsRefinement] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [autoGenTriggered, setAutoGenTriggered] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -60,11 +61,11 @@ export default function ProjectEditor() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isGenerating, generationStatus]);
 
-  const handleGenerate = async () => {
-    if (!prompt.trim() || isGenerating) return;
+  const handleGenerate = useCallback(async (promptOverride?: string) => {
+    const currentPrompt = promptOverride ?? prompt;
+    if (!currentPrompt.trim() || isGenerating) return;
 
-    const currentPrompt = prompt;
-    setPrompt("");
+    if (!promptOverride) setPrompt("");
     setIsGenerating(true);
     setGenerationStatus("Starte Generierung…");
 
@@ -95,9 +96,6 @@ export default function ProjectEditor() {
               setGenerationStatus("Abgeschlossen");
               setIframeKey((k) => k + 1);
               queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(id) });
-              if (conversationId) {
-                queryClient.invalidateQueries({ queryKey: getListAnthropicMessagesQueryKey(conversationId) });
-              }
               setTimeout(() => queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(id) }), 600);
             } else if (json.content) {
               setGenerationStatus("Generiert Code…");
@@ -111,6 +109,14 @@ export default function ProjectEditor() {
           }
         }
       }
+
+      queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(id) });
+      setTimeout(() => {
+        if (conversationId) {
+          queryClient.invalidateQueries({ queryKey: getListAnthropicMessagesQueryKey(conversationId) });
+        }
+        queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(id) });
+      }, 800);
     } catch {
       toast({ title: "Fehler", description: "Code konnte nicht generiert werden.", variant: "destructive" });
       setGenerationStatus("Fehlgeschlagen");
@@ -118,7 +124,24 @@ export default function ProjectEditor() {
       setIsGenerating(false);
       setTimeout(() => setGenerationStatus(""), 2500);
     }
-  };
+  }, [prompt, isGenerating, isRefinement, id, conversationId, queryClient, toast]);
+
+  // Auto-generate when project was created from URL analysis and never generated before
+  useEffect(() => {
+    if (
+      !autoGenTriggered &&
+      project &&
+      !isProjectLoading &&
+      !project.htmlCode &&
+      !project.conversationId &&
+      project.sourceUrl &&
+      project.description &&
+      !isGenerating
+    ) {
+      setAutoGenTriggered(true);
+      handleGenerate(project.description);
+    }
+  }, [project, isProjectLoading, autoGenTriggered, isGenerating, handleGenerate]);
 
   const handlePublish = () => {
     publishProject.mutate({ id }, {
@@ -160,6 +183,8 @@ export default function ProjectEditor() {
     const base = import.meta.env.BASE_URL.replace(/\/$/, "");
     window.open(`${base}/api/projects/${id}/preview`, "_blank");
   };
+
+  const isNewProject = !project?.conversationId && !project?.htmlCode;
 
   if (isProjectLoading) {
     return (
@@ -301,6 +326,42 @@ export default function ProjectEditor() {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+
+              {/* URL source card — shown when project was created from URL analysis */}
+              {project.sourceUrl && (
+                <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <LinkIcon className="w-3 h-3 text-primary/60 shrink-0" />
+                    <span className="text-[10px] font-semibold text-primary/60 uppercase tracking-wider">Analysierte URL</span>
+                  </div>
+                  <p className="text-xs text-foreground/70 break-all leading-relaxed">{project.sourceUrl}</p>
+                </div>
+              )}
+
+              {/* Description card — shown for new projects */}
+              {isNewProject && project.description && (
+                <div className="rounded-xl border border-border/40 bg-card/40 px-3 py-2.5 space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3 text-primary/60 shrink-0" />
+                    <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Deine Beschreibung</span>
+                  </div>
+                  <p className="text-xs text-foreground/70 leading-relaxed line-clamp-6">{project.description}</p>
+                  {!isGenerating && !autoGenTriggered && (
+                    <Button
+                      size="sm"
+                      className="w-full h-7 text-xs mt-1 glow-primary-sm"
+                      onClick={() => {
+                        setAutoGenTriggered(true);
+                        handleGenerate(project.description);
+                      }}
+                    >
+                      <Sparkles className="w-3 h-3 mr-1.5" />
+                      Jetzt generieren
+                    </Button>
+                  )}
+                </div>
+              )}
+
               {/* System greeting */}
               <div className="flex gap-2.5">
                 <div className="w-6 h-6 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
@@ -310,6 +371,8 @@ export default function ProjectEditor() {
                   <p className="text-xs text-foreground/70 leading-relaxed">
                     {project.htmlCode
                       ? `Projekt bereit. Beschreibe Änderungen oder aktiviere "Verfeinern" für gezielte Anpassungen.`
+                      : project.sourceUrl
+                      ? `Ich analysiere die URL und baue dir die App…`
                       : `Hallo! Beschreibe unten, was ich für dich bauen soll.`}
                   </p>
                 </div>

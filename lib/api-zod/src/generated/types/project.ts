@@ -17,6 +17,8 @@ export interface Project {
   publishedUrl?: string | null;
   /** @nullable */
   conversationId?: number | null;
+  /** @nullable */
+  sourceUrl?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -24,6 +24,8 @@ export interface Project {
   publishedUrl?: string | null;
   /** @nullable */
   conversationId?: number | null;
+  /** @nullable */
+  sourceUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -33,6 +35,7 @@ export interface ProjectInput {
   title: string;
   /** @minLength 1 */
   description: string;
+  sourceUrl?: string | null;
 }
 
 export interface ProjectUpdate {
