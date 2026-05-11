@@ -282,11 +282,11 @@ export default function Settings() {
                     <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <CardTitle className="text-sm font-semibold">Pollinations AI</CardTitle>
+                        <CardTitle className="text-sm font-semibold">DeepSeek R1</CardTitle>
                         <Badge className="text-[10px] px-1.5 py-0 border bg-primary/15 text-primary border-primary/20">Eingebaut · Kein Key nötig</Badge>
                       </div>
                       <CardDescription className="text-xs mt-0.5">
-                        Immer verfügbar — kostenlos, kein Account, kein API-Key. Nutzt GPT-4o im Hintergrund.
+                        Speziell für Programmierung entwickelt — kostenlos, kein Account, kein API-Key. Einer der besten Code-KI-Modelle weltweit.
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
