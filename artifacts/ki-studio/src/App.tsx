@@ -7,8 +7,11 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import NewProject from "@/pages/new-project";
 import ProjectEditor from "@/pages/project-editor";
-import { Sparkles, Zap, Eye, Globe } from "lucide-react";
+import { Sparkles, Zap, Eye, Globe, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useState } from "react";
 
 const queryClient = new QueryClient();
 
@@ -23,8 +26,134 @@ function Router() {
   );
 }
 
+type AuthMode = "login" | "register";
+
+function AuthForm({ onSuccess }: { onSuccess: () => void }) {
+  const [mode, setMode] = useState<AuthMode>("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const url = mode === "login" ? "/api/auth/login" : "/api/auth/register";
+      const body: Record<string, string> = { email, password };
+      if (mode === "register" && firstName) body.firstName = firstName;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json() as { error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Unbekannter Fehler");
+        return;
+      }
+      onSuccess();
+    } catch {
+      setError("Netzwerkfehler — bitte erneut versuchen");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4 w-full">
+      {mode === "register" && (
+        <div className="space-y-1.5">
+          <Label htmlFor="firstName" className="text-sm text-foreground/80">Vorname (optional)</Label>
+          <Input
+            id="firstName"
+            type="text"
+            placeholder="Max"
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            className="bg-card/60 border-border/60 focus:border-primary/50"
+            autoComplete="given-name"
+          />
+        </div>
+      )}
+      <div className="space-y-1.5">
+        <Label htmlFor="email" className="text-sm text-foreground/80">E-Mail</Label>
+        <Input
+          id="email"
+          type="email"
+          placeholder="du@beispiel.de"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          className="bg-card/60 border-border/60 focus:border-primary/50"
+          autoComplete="email"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="password" className="text-sm text-foreground/80">Passwort</Label>
+        <Input
+          id="password"
+          type="password"
+          placeholder={mode === "register" ? "Mindestens 8 Zeichen" : "Dein Passwort"}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          className="bg-card/60 border-border/60 focus:border-primary/50"
+          autoComplete={mode === "login" ? "current-password" : "new-password"}
+        />
+      </div>
+
+      {error && (
+        <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2">
+          {error}
+        </p>
+      )}
+
+      <Button
+        type="submit"
+        disabled={loading}
+        className="w-full gap-2 h-10 font-medium glow-primary-sm hover:glow-primary transition-all"
+        data-testid="button-submit-auth"
+      >
+        {loading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : mode === "login" ? "Anmelden" : "Konto erstellen"}
+      </Button>
+
+      <p className="text-center text-xs text-muted-foreground">
+        {mode === "login" ? (
+          <>Noch kein Konto?{" "}
+            <button
+              type="button"
+              onClick={() => { setMode("register"); setError(""); }}
+              className="text-primary hover:underline"
+            >
+              Registrieren
+            </button>
+          </>
+        ) : (
+          <>Bereits registriert?{" "}
+            <button
+              type="button"
+              onClick={() => { setMode("login"); setError(""); }}
+              className="text-primary hover:underline"
+            >
+              Anmelden
+            </button>
+          </>
+        )}
+      </p>
+    </form>
+  );
+}
+
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isLoading, isAuthenticated, login } = useAuth();
+  const { isLoading, isAuthenticated, refetch } = useAuth();
 
   if (isLoading) {
     return (
@@ -42,7 +171,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen flex flex-col bg-background text-foreground dark overflow-hidden relative">
-        {/* Ambient orbs */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div className="orb-1 absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-primary/5 blur-[120px]" />
           <div className="orb-2 absolute -bottom-60 -right-40 w-[700px] h-[700px] rounded-full bg-primary/4 blur-[140px]" />
@@ -50,7 +178,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         </div>
         <div className="absolute inset-0 dot-grid opacity-40 pointer-events-none" />
 
-        {/* Header */}
         <header className="relative z-10 w-full border-b border-border/40 bg-background/60 backdrop-blur">
           <div className="container flex h-14 max-w-screen-xl items-center">
             <div className="flex items-center gap-2.5">
@@ -62,7 +189,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        {/* Hero + Form */}
         <main className="relative z-10 flex-1 flex items-center justify-center px-4 py-16">
           <div className="max-w-md w-full space-y-10">
             <div className="text-center space-y-4 animate-fade-in-up">
@@ -79,18 +205,10 @@ function AuthGate({ children }: { children: React.ReactNode }) {
               </p>
             </div>
 
-            {/* Auth card */}
             <div className="animate-fade-in-up animate-fade-in-up-delay-1 rounded-2xl border border-border/50 bg-card/40 backdrop-blur-sm p-6 space-y-5">
-              <Button
-                onClick={login}
-                className="w-full gap-2 h-10 font-medium glow-primary-sm hover:glow-primary transition-all"
-                data-testid="button-login"
-              >
-                Kostenlos anmelden
-              </Button>
+              <AuthForm onSuccess={() => refetch()} />
             </div>
 
-            {/* Feature tiles */}
             <div className="grid grid-cols-3 gap-3 animate-fade-in-up animate-fade-in-up-delay-2">
               {[
                 { icon: Zap, label: "KI generiert", desc: "vollständigen Code" },
