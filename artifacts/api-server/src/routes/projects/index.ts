@@ -312,54 +312,59 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
         .where(eq(messagesTable.conversationId, conversationId))
         .orderBy(messagesTable.createdAt);
 
+      // Current HTML (for refinement context)
+      const currentHtml = project.htmlCode ?? "";
+
       const systemPrompt = isRefinement
-        ? `Du bist ein Elite-Webentwickler. Du hast bereits eine vollständige HTML-App generiert und sollst sie nun präzise verfeinern.
+        ? `Du bist ein Elite-Webentwickler. Du hast bereits eine vollständige HTML-App generiert. Verfeinere sie jetzt präzise anhand der Nutzeranweisung.
 
-WICHTIGE REGELN:
+AKTUELLE APP (diese sollst du überarbeiten):
+\`\`\`html
+${currentHtml.slice(0, 60000)}
+\`\`\`
+
+REGELN:
 - Setze JEDE Änderung vollständig um — kein Detail ist zu klein
-- Behalte ALLE bestehenden Funktionen bei, es sei denn, der Nutzer möchte explizit etwas entfernen
+- Behalte ALLE bestehenden Funktionen bei, es sei denn der Nutzer möchte explizit etwas entfernen
 - Verbessere gleichzeitig Qualität, Performance und Aussehen wo möglich
-- Wenn Bilder/Screenshots als Referenz hochgeladen wurden, passe das Design EXAKT daran an — gleiche Farben, Schriften, Layout, Abstände, Elemente
-- Gib die KOMPLETTE, überarbeitete HTML-Datei zurück — niemals nur Teile oder Snippets
+- Wenn Bilder/Screenshots hochgeladen wurden, passe das Design EXAKT an
+- Gib die KOMPLETTE überarbeitete HTML-Datei zurück — niemals nur Teile
 
-OUTPUT-FORMAT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen, KEINE Codeblöcke.`
+OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen.`
         : `Du bist ein Elite-Webentwickler und UI/UX-Designer. Erstelle eine professionelle, vollständige Web-App als einzelne HTML-Datei.
 
-DEINE KERNAUFGABE: Setze ALLES um was der Nutzer beschreibt — bis ins kleinste Detail, vollständig ausgearbeitet, keine Abkürzungen, keine Platzhalter.
+KERNAUFGABE: Setze ALLES um was der Nutzer beschreibt — vollständig ausgearbeitet, keine Platzhalter, keine Abkürzungen.
 
-QUALITÄTSSTANDARDS (alle MÜSSEN erfüllt sein):
-1. VOLLSTÄNDIGKEIT: Jede beschriebene Funktion muss vollständig implementiert sein. Kein "TODO", kein "coming soon", keine Platzhalter
-2. DESIGN: Modernes, professionelles UI — schöne Farben, saubere Typographie, durchdachte Abstände, Hover-Effekte, Transitions, Animationen
-3. FUNKTIONALITÄT: Alle Interaktionen müssen funktionieren — Formulare, Klicks, Navigation, Filter, Suche, alles
-4. DATENMENGE: Füge realistische Beispieldaten ein (mind. 10-20 Einträge wo sinnvoll), damit die App sofort lebendig wirkt
+QUALITÄTSSTANDARDS:
+1. VOLLSTÄNDIGKEIT: Jede Funktion vollständig implementiert — kein "TODO", kein "coming soon"
+2. DESIGN: Modernes, professionelles UI — Farben, Typographie, Hover-Effekte, Animationen
+3. FUNKTIONALITÄT: Alle Interaktionen funktionieren — Formulare, Navigation, Filter, Suche
+4. DATEN: Realistische Beispieldaten (10-20 Einträge) damit die App sofort lebendig wirkt
 5. RESPONSIVITÄT: Perfektes Layout auf Desktop, Tablet und Mobile
-6. DETAILS: Hover-States, aktive Zustände, Ladeanimationen, Error-States, leere Zustände — alles ausgearbeitet
-7. CODE-QUALITÄT: Sauberer, gut strukturierter Code mit vollständigem CSS und JavaScript
+6. DETAILS: Hover-States, Lade-Animationen, Error-States, Leer-Zustände
 
-TECHNISCHE VORGABEN:
-- Eine einzige HTML-Datei mit allem eingebettet (CSS in <style>, JS in <script>)
-- Externe CDN-Bibliotheken erlaubt und erwünscht (Chart.js, Alpine.js, Lucide Icons, Google Fonts, Animate.css, usw.)
-- Keine externen API-Aufrufe — alles client-seitig mit realistischen Mock-Daten
+TECHNIK:
+- Einzelne HTML-Datei mit allem eingebettet (CSS in <style>, JS in <script>)
+- CDN-Bibliotheken erlaubt: Chart.js, Alpine.js, Lucide Icons, Google Fonts, Tailwind CDN usw.
+- Keine externen API-Aufrufe — alles client-seitig mit Mock-Daten
 - Sprache: Deutsch (außer der Nutzer gibt etwas anderes an)
 
-WENN BILDER/SCREENSHOTS hochgeladen wurden:
-- Analysiere das Design GENAU — Farben (exakte Hex-Codes), Schriften, Layout, Abstände, Icons, Struktur
-- Reproduziere das Aussehen so präzise wie möglich
-- Füge alle sichtbaren Elemente und Funktionen ein
+UMFANG: Schreibe so viel Code wie nötig — 500 bis 2000+ Zeilen. Qualität vor Kürze.
 
-UMFANG: Schreibe so viel Code wie nötig — 500, 1000, 2000+ Zeilen wenn das zur Vollständigkeit beiträgt. Qualität geht vor Kürze.
-
-OUTPUT-FORMAT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen, KEINE Codeblöcke.`;
+OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen.`;
 
       type ChatMsg = { role: "system" | "user" | "assistant"; content: string | Array<{ type: string; [k: string]: unknown }> };
 
+      // Only include user messages as context — assistant messages contained full HTML (huge), skip them
       const previousMessages = history.slice(0, -1);
       const chatMessages: ChatMsg[] = [
         { role: "system", content: systemPrompt },
-        ...previousMessages.map((m): ChatMsg => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        })),
+        ...previousMessages
+          .filter((m) => m.role === "user")
+          .map((m): ChatMsg => ({
+            role: "user",
+            content: m.content,
+          })),
       ];
 
       if (images.length > 0) {

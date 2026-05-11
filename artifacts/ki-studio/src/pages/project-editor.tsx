@@ -484,8 +484,16 @@ export default function ProjectEditor() {
                     }`}>
                       {msg.role === "user" ? (
                         <p className="whitespace-pre-wrap">{msg.content}</p>
+                      ) : msg.content.startsWith("__HTML_VERSION_") ? (
+                        <span className="text-primary/70 font-medium flex items-center gap-1.5">
+                          <Sparkles className="w-3 h-3" />
+                          Version {msg.content.replace("__HTML_VERSION_", "").replace("__", "")} generiert ✓
+                        </span>
                       ) : (
-                        <span className="text-primary/70 font-medium">Code generiert ✓</span>
+                        <span className="text-primary/70 font-medium flex items-center gap-1.5">
+                          <Sparkles className="w-3 h-3" />
+                          Code generiert ✓
+                        </span>
                       )}
                     </div>
                   </div>

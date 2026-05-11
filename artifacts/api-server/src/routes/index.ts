@@ -3,6 +3,7 @@ import healthRouter from "./health";
 import authRouter from "./auth";
 import projectsRouter from "./projects";
 import analyzeUrlRouter from "./analyze-url";
+import conversationsRouter from "./conversations";
 
 const router: IRouter = Router();
 
@@ -10,5 +11,6 @@ router.use(healthRouter);
 router.use(authRouter);
 router.use(projectsRouter);
 router.use(analyzeUrlRouter);
+router.use(conversationsRouter);
 
 export default router;
