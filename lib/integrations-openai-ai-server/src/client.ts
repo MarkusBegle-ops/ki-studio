@@ -11,7 +11,7 @@ export interface AIClient {
   client: OpenAI;
   textModel: string;
   visionModel: string;
-  provider: "openrouter" | "groq" | "gemini" | "openai";
+  provider: "openrouter" | "groq" | "gemini" | "openai" | "pollinations";
 }
 
 export function getAIClient(keys: UserApiKeys): AIClient {
@@ -64,9 +64,16 @@ export function getAIClient(keys: UserApiKeys): AIClient {
     };
   }
 
-  throw new Error(
-    "Kein API-Key hinterlegt. Bitte trage deinen Key in den Einstellungen ein.",
-  );
+  // Pollinations AI — kein API-Key nötig, kostenlos
+  return {
+    client: new OpenAI({
+      apiKey: "pollinations",
+      baseURL: "https://text.pollinations.ai/openai",
+    }),
+    textModel: "openai",
+    visionModel: "openai",
+    provider: "pollinations",
+  };
 }
 
 export function getOpenAIClient(apiKey?: string | null): OpenAI {

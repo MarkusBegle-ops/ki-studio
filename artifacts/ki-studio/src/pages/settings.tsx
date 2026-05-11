@@ -272,8 +272,31 @@ export default function Settings() {
             <div className="space-y-3">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-0.5">KI-Anbieter</p>
               <p className="text-xs text-muted-foreground -mt-1 px-0.5">
-                KI Studio nutzt automatisch den ersten verfügbaren Anbieter (Priorität: OpenRouter → Groq → Gemini → OpenAI).
+                KI Studio nutzt automatisch den besten verfügbaren Anbieter. Priorität: OpenRouter → Groq → Gemini → OpenAI → Pollinations (immer aktiv).
               </p>
+
+              {/* Pollinations — built-in, always available */}
+              <Card className="border-primary/20 bg-primary/5">
+                <CardHeader className="pb-3 pt-4 px-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-sm font-semibold">Pollinations AI</CardTitle>
+                        <Badge className="text-[10px] px-1.5 py-0 border bg-primary/15 text-primary border-primary/20">Eingebaut · Kein Key nötig</Badge>
+                      </div>
+                      <CardDescription className="text-xs mt-0.5">
+                        Immer verfügbar — kostenlos, kein Account, kein API-Key. Nutzt GPT-4o im Hintergrund.
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <CheckCircle2 className="w-4 h-4 text-primary" />
+                      <span className="text-xs text-primary font-medium">Aktiv</span>
+                    </div>
+                  </div>
+                </CardHeader>
+              </Card>
+
               {settings && PROVIDERS.map(cfg => (
                 <ProviderCard
                   key={cfg.id}
