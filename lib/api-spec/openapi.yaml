@@ -569,6 +569,21 @@ components:
         isPublished:
           type: boolean
 
+    UploadedImage:
+      type: object
+      properties:
+        data:
+          type: string
+          description: Base64 encoded image data
+        mediaType:
+          type: string
+          enum: [image/jpeg, image/png, image/gif, image/webp]
+        name:
+          type: string
+      required:
+        - data
+        - mediaType
+
     GenerateInput:
       type: object
       properties:
@@ -577,6 +592,10 @@ components:
           minLength: 1
         isRefinement:
           type: boolean
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/UploadedImage"
       required:
         - prompt
 

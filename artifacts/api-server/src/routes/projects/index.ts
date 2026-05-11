@@ -268,12 +268,14 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
         .where(eq(projectsTable.id, project.id));
     }
 
+    // Store text-only version in DB for history
     await db.insert(messagesTable).values({
       conversationId,
       role: "user",
       content: parsed.data.prompt,
     });
 
+    // Load history EXCLUDING the just-inserted message (we'll build it with images)
     const history = await db
       .select()
       .from(messagesTable)
@@ -283,32 +285,83 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
     send({ status: "Generiere Code..." });
 
     const systemPrompt = parsed.data.isRefinement
-      ? `Du bist ein Experte für Web-Entwicklung. Du hast bereits eine Single-Page-HTML-App für den Nutzer generiert. Nun möchte der Nutzer Änderungen vornehmen.
-Gib NUR vollständiges, eigenständiges HTML zurück — eine einzige HTML-Datei mit eingebettetem CSS (im <style>-Tag) und JavaScript (im <script>-Tag).
-Behalte alle bestehenden Funktionen bei, es sei denn, der Nutzer möchte explizit etwas entfernen.
-Antworte AUSSCHLIESSLICH mit dem HTML-Code, ohne Erklärungen, ohne Markdown-Codeblöcke, ohne \`\`\`html. Beginne direkt mit <!DOCTYPE html>.`
-      : `Du bist ein Experte für Web-Entwicklung. Erstelle eine vollständige, eigenständige Single-Page-HTML-App basierend auf der Beschreibung des Nutzers.
-Gib NUR vollständiges, eigenständiges HTML zurück — eine einzige HTML-Datei mit eingebettetem CSS (im <style>-Tag) und JavaScript (im <script>-Tag).
-Die App soll:
-- Modern und professionell aussehen
-- Vollständig funktionsfähig sein (alle beschriebenen Features)
-- Responsiv sein (mobile-friendly)
-- Keine externen Abhängigkeiten benötigen außer CDN-Links die du inline einbettest
-- Auf Deutsch sein falls der Nutzer keine andere Sprache angibt
-Antworte AUSSCHLIESSLICH mit dem HTML-Code, ohne Erklärungen, ohne Markdown-Codeblöcke, ohne \`\`\`html. Beginne direkt mit <!DOCTYPE html>.`;
+      ? `Du bist ein Elite-Webentwickler. Du hast bereits eine vollständige HTML-App generiert und sollst sie nun präzise verfeinern.
 
-    const chatMessages = history.map((m) => ({
+WICHTIGE REGELN:
+- Setze JEDE Änderung vollständig um — kein Detail ist zu klein
+- Behalte ALLE bestehenden Funktionen bei, es sei denn, der Nutzer möchte explizit etwas entfernen
+- Verbessere gleichzeitig Qualität, Performance und Aussehen wo möglich
+- Wenn Bilder/Screenshots als Referenz hochgeladen wurden, passe das Design EXAKT daran an — gleiche Farben, Schriften, Layout, Abstände, Elemente
+- Gib die KOMPLETTE, überarbeitete HTML-Datei zurück — niemals nur Teile oder Snippets
+
+OUTPUT-FORMAT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen, KEINE Codeblöcke.`
+      : `Du bist ein Elite-Webentwickler und UI/UX-Designer. Erstelle eine professionelle, vollständige Web-App als einzelne HTML-Datei.
+
+DEINE KERNAUFGABE: Setze ALLES um was der Nutzer beschreibt — bis ins kleinste Detail, vollständig ausgearbeitet, keine Abkürzungen, keine Platzhalter.
+
+QUALITÄTSSTANDARDS (alle MÜSSEN erfüllt sein):
+1. VOLLSTÄNDIGKEIT: Jede beschriebene Funktion muss vollständig implementiert sein. Kein "TODO", kein "coming soon", keine Platzhalter
+2. DESIGN: Modernes, professionelles UI — schöne Farben, saubere Typographie, durchdachte Abstände, Hover-Effekte, Transitions, Animationen
+3. FUNKTIONALITÄT: Alle Interaktionen müssen funktionieren — Formulare, Klicks, Navigation, Filter, Suche, alles
+4. DATENMENGE: Füge realistische Beispieldaten ein (mind. 10-20 Einträge wo sinnvoll), damit die App sofort lebendig wirkt
+5. RESPONSIVITÄT: Perfektes Layout auf Desktop, Tablet und Mobile
+6. DETAILS: Hover-States, aktive Zustände, Ladeanimationen, Error-States, leere Zustände — alles ausgearbeitet
+7. CODE-QUALITÄT: Sauberer, gut strukturierter Code mit vollständigem CSS und JavaScript
+
+TECHNISCHE VORGABEN:
+- Eine einzige HTML-Datei mit allem eingebettet (CSS in <style>, JS in <script>)
+- Externe CDN-Bibliotheken erlaubt und erwünscht (Chart.js, Alpine.js, Lucide Icons, Google Fonts, Animate.css, usw.)
+- Keine externen API-Aufrufe — alles client-seitig mit realistischen Mock-Daten
+- Sprache: Deutsch (außer der Nutzer gibt etwas anderes an)
+
+WENN BILDER/SCREENSHOTS hochgeladen wurden:
+- Analysiere das Design GENAU — Farben (exakte Hex-Codes), Schriften, Layout, Abstände, Icons, Struktur
+- Reproduziere das Aussehen so präzise wie möglich
+- Füge alle sichtbaren Elemente und Funktionen ein
+
+UMFANG: Schreibe so viel Code wie nötig — 500, 1000, 2000+ Zeilen wenn das zur Vollständigkeit beiträgt. Qualität geht vor Kürze.
+
+OUTPUT-FORMAT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen, KEINE Codeblöcke.`;
+
+    // Build messages array — past history as text, current message with optional images
+    const images = parsed.data.images ?? [];
+    const previousMessages = history.slice(0, -1); // all except the last (just inserted)
+
+    type TextBlock = { type: "text"; text: string };
+    type ImageBlock = { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+    type ContentBlock = TextBlock | ImageBlock;
+    type AnthropicMessage = { role: "user" | "assistant"; content: string | ContentBlock[] };
+
+    const chatMessages: AnthropicMessage[] = previousMessages.map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     }));
+
+    // Current user message: include images if provided
+    if (images.length > 0) {
+      const contentBlocks: ContentBlock[] = [
+        ...images.map((img): ImageBlock => ({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: img.mediaType,
+            data: img.data,
+          },
+        })),
+        { type: "text", text: parsed.data.prompt },
+      ];
+      chatMessages.push({ role: "user", content: contentBlocks });
+    } else {
+      chatMessages.push({ role: "user", content: parsed.data.prompt });
+    }
 
     let fullResponse = "";
 
     const stream = anthropic.messages.stream({
       model: "claude-sonnet-4-6",
-      max_tokens: 8192,
+      max_tokens: 16000,
       system: systemPrompt,
-      messages: chatMessages,
+      messages: chatMessages as Parameters<typeof anthropic.messages.stream>[0]["messages"],
     });
 
     for await (const event of stream) {

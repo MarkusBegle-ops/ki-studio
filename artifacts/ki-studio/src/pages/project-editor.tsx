@@ -17,7 +17,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Loader2, ArrowLeft, Send, Globe, Copy, Check,
-  AlertCircle, Download, ExternalLink, User, Bot, Sparkles, Link as LinkIcon,
+  AlertCircle, Download, ExternalLink, User, Bot, Sparkles,
+  Link as LinkIcon, Paperclip, X, Image as ImageIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -25,6 +26,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+
+interface AttachedImage {
+  name: string;
+  data: string;
+  mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+  preview: string;
+}
 
 export default function ProjectEditor() {
   const params = useParams();
@@ -39,9 +47,11 @@ export default function ProjectEditor() {
   const [iframeKey, setIframeKey] = useState(0);
   const [copied, setCopied] = useState(false);
   const [autoGenTriggered, setAutoGenTriggered] = useState(false);
+  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: project, isLoading: isProjectLoading } = useGetProject(id, {
     query: { enabled: !!id, queryKey: getGetProjectQueryKey(id) },
@@ -61,21 +71,37 @@ export default function ProjectEditor() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isGenerating, generationStatus]);
 
-  const handleGenerate = useCallback(async (promptOverride?: string) => {
+  const handleGenerate = useCallback(async (promptOverride?: string, imagesOverride?: AttachedImage[]) => {
     const currentPrompt = promptOverride ?? prompt;
+    const currentImages = imagesOverride ?? attachedImages;
     if (!currentPrompt.trim() || isGenerating) return;
 
-    if (!promptOverride) setPrompt("");
+    if (!promptOverride) {
+      setPrompt("");
+      setAttachedImages([]);
+      // revoke preview URLs
+      attachedImages.forEach(img => URL.revokeObjectURL(img.preview));
+    }
+
     setIsGenerating(true);
     setGenerationStatus("Starte Generierung…");
 
     try {
       const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+      const body: Record<string, unknown> = { prompt: currentPrompt, isRefinement };
+      if (currentImages.length > 0) {
+        body.images = currentImages.map(img => ({
+          data: img.data,
+          mediaType: img.mediaType,
+          name: img.name,
+        }));
+      }
+
       const res = await fetch(`${base}/api/projects/${id}/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ prompt: currentPrompt, isRefinement }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) throw new Error("Fehler bei der Anfrage");
@@ -124,7 +150,7 @@ export default function ProjectEditor() {
       setIsGenerating(false);
       setTimeout(() => setGenerationStatus(""), 2500);
     }
-  }, [prompt, isGenerating, isRefinement, id, conversationId, queryClient, toast]);
+  }, [prompt, attachedImages, isGenerating, isRefinement, id, conversationId, queryClient, toast]);
 
   // Auto-generate when project was created from URL analysis and never generated before
   useEffect(() => {
@@ -139,9 +165,59 @@ export default function ProjectEditor() {
       !isGenerating
     ) {
       setAutoGenTriggered(true);
-      handleGenerate(project.description);
+      handleGenerate(project.description, []);
     }
   }, [project, isProjectLoading, autoGenTriggered, isGenerating, handleGenerate]);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+
+    const validTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
+    const newImages: AttachedImage[] = [];
+
+    for (const file of files) {
+      if (!validTypes.includes(file.type as typeof validTypes[number])) {
+        toast({ title: "Ungültiger Dateityp", description: `${file.name} wird nicht unterstützt. Erlaubt: JPG, PNG, GIF, WebP`, variant: "destructive" });
+        continue;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast({ title: "Datei zu groß", description: `${file.name} überschreitet das 5 MB Limit.`, variant: "destructive" });
+        continue;
+      }
+
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          // Strip the data URL prefix (e.g. "data:image/png;base64,")
+          resolve(result.split(",")[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      newImages.push({
+        name: file.name,
+        data,
+        mediaType: file.type as AttachedImage["mediaType"],
+        preview: URL.createObjectURL(file),
+      });
+    }
+
+    if (newImages.length > 0) {
+      setAttachedImages(prev => [...prev, ...newImages]);
+    }
+    // Reset input so same file can be re-selected
+    e.target.value = "";
+  };
+
+  const removeImage = (index: number) => {
+    setAttachedImages(prev => {
+      URL.revokeObjectURL(prev[index].preview);
+      return prev.filter((_, i) => i !== index);
+    });
+  };
 
   const handlePublish = () => {
     publishProject.mutate({ id }, {
@@ -183,8 +259,6 @@ export default function ProjectEditor() {
     const base = import.meta.env.BASE_URL.replace(/\/$/, "");
     window.open(`${base}/api/projects/${id}/preview`, "_blank");
   };
-
-  const isNewProject = !project?.conversationId && !project?.htmlCode;
 
   if (isProjectLoading) {
     return (
@@ -315,7 +389,7 @@ export default function ProjectEditor() {
         {/* Split View */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left: Chat */}
-          <div className="w-[360px] shrink-0 flex flex-col border-r border-border/50 bg-card/10">
+          <div className="w-[380px] shrink-0 flex flex-col border-r border-border/50 bg-card/10">
             {/* Chat header */}
             <div className="px-4 py-3 border-b border-border/30 flex items-center gap-2">
               <div className="w-5 h-5 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center">
@@ -327,7 +401,7 @@ export default function ProjectEditor() {
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
 
-              {/* URL source card — shown when project was created from URL analysis */}
+              {/* URL source card */}
               {project.sourceUrl && (
                 <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 space-y-1.5">
                   <div className="flex items-center gap-1.5">
@@ -343,16 +417,16 @@ export default function ProjectEditor() {
                 <div className="rounded-xl border border-border/40 bg-card/40 px-3 py-2.5 space-y-1.5">
                   <div className="flex items-center gap-1.5">
                     <Sparkles className="w-3 h-3 text-primary/60 shrink-0" />
-                    <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Deine Beschreibung</span>
+                    <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Projektbeschreibung</span>
                   </div>
                   <p className="text-xs text-foreground/70 leading-relaxed line-clamp-6">{project.description}</p>
-                  {!isGenerating && !autoGenTriggered && (
+                  {!project.conversationId && !project.htmlCode && !isGenerating && !autoGenTriggered && (
                     <Button
                       size="sm"
                       className="w-full h-7 text-xs mt-1 glow-primary-sm"
                       onClick={() => {
                         setAutoGenTriggered(true);
-                        handleGenerate(project.description);
+                        handleGenerate(project.description, []);
                       }}
                     >
                       <Sparkles className="w-3 h-3 mr-1.5" />
@@ -370,10 +444,10 @@ export default function ProjectEditor() {
                 <div className="bg-card/60 border border-border/50 px-3 py-2.5 rounded-2xl rounded-tl-none max-w-[85%]">
                   <p className="text-xs text-foreground/70 leading-relaxed">
                     {project.htmlCode
-                      ? `Projekt bereit. Beschreibe Änderungen oder aktiviere "Verfeinern" für gezielte Anpassungen.`
+                      ? `Projekt bereit. Beschreibe Änderungen — du kannst auch Bilder oder Screenshots anhängen.`
                       : project.sourceUrl
                       ? `Ich analysiere die URL und baue dir die App…`
-                      : `Hallo! Beschreibe unten, was ich für dich bauen soll.`}
+                      : `Hallo! Beschreibe was ich bauen soll. Du kannst auch Bilder oder Screenshots anhängen.`}
                   </p>
                 </div>
               </div>
@@ -437,6 +511,30 @@ export default function ProjectEditor() {
 
             {/* Input */}
             <div className="p-3 border-t border-border/40 bg-background/40">
+              {/* Image previews */}
+              {attachedImages.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2.5">
+                  {attachedImages.map((img, i) => (
+                    <div key={i} className="relative group">
+                      <img
+                        src={img.preview}
+                        alt={img.name}
+                        className="w-16 h-16 rounded-lg object-cover border border-border/60 bg-muted/40"
+                      />
+                      <button
+                        onClick={() => removeImage(i)}
+                        className="absolute -top-1.5 -right-1.5 w-4.5 h-4.5 rounded-full bg-destructive text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                      <div className="absolute inset-0 rounded-lg bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <ImageIcon className="w-4 h-4 text-white" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="relative">
                 <Textarea
                   ref={textareaRef}
@@ -460,16 +558,48 @@ export default function ProjectEditor() {
                 <Button
                   size="icon"
                   className="absolute bottom-2.5 right-2.5 h-7 w-7 rounded-lg"
-                  disabled={!prompt.trim() || isGenerating}
-                  onClick={handleGenerate}
+                  disabled={(!prompt.trim() && attachedImages.length === 0) || isGenerating}
+                  onClick={() => handleGenerate()}
                   data-testid="button-send"
                 >
                   <Send className="w-3.5 h-3.5" />
                 </Button>
               </div>
-              <p className="text-[10px] text-muted-foreground/30 text-right mt-1.5 pr-1">
-                Shift + Enter für neue Zeile
-              </p>
+
+              {/* Bottom toolbar */}
+              <div className="flex items-center justify-between mt-1.5 px-0.5">
+                <div className="flex items-center gap-1">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    multiple
+                    className="hidden"
+                    onChange={handleFileSelect}
+                  />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground/50 hover:text-muted-foreground"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isGenerating}
+                        data-testid="button-attach"
+                      >
+                        <Paperclip className="w-3.5 h-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Bild anhängen (JPG, PNG, GIF, WebP · max. 5 MB)</TooltipContent>
+                  </Tooltip>
+                  {attachedImages.length > 0 && (
+                    <span className="text-[10px] text-primary/60 font-medium">{attachedImages.length} Bild{attachedImages.length !== 1 ? "er" : ""}</span>
+                  )}
+                </div>
+                <p className="text-[10px] text-muted-foreground/30 pr-1">
+                  Shift + Enter für neue Zeile
+                </p>
+              </div>
             </div>
           </div>
 
@@ -508,7 +638,7 @@ export default function ProjectEditor() {
                   </div>
                   <p className="text-base font-medium text-foreground/50 mb-2">Bereit für deine Anweisungen</p>
                   <p className="text-sm text-muted-foreground/40 max-w-xs leading-relaxed">
-                    Schreibe links was du bauen möchtest. Die KI generiert sofort eine Live-Vorschau.
+                    Schreibe links was du bauen möchtest — oder lade ein Screenshot hoch.
                   </p>
                 </div>
               ) : (

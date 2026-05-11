@@ -46,10 +46,28 @@ export interface ProjectUpdate {
   isPublished?: boolean;
 }
 
+export type UploadedImageMediaType =
+  (typeof UploadedImageMediaType)[keyof typeof UploadedImageMediaType];
+
+export const UploadedImageMediaType = {
+  "image/jpeg": "image/jpeg",
+  "image/png": "image/png",
+  "image/gif": "image/gif",
+  "image/webp": "image/webp",
+} as const;
+
+export interface UploadedImage {
+  /** Base64 encoded image data */
+  data: string;
+  mediaType: UploadedImageMediaType;
+  name?: string;
+}
+
 export interface GenerateInput {
   /** @minLength 1 */
   prompt: string;
   isRefinement?: boolean;
+  images?: UploadedImage[];
 }
 
 export interface ProjectsSummary {

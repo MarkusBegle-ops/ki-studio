@@ -30,3 +30,5 @@ export * from "./project";
 export * from "./projectInput";
 export * from "./projectsSummary";
 export * from "./projectUpdate";
+export * from "./uploadedImage";
+export * from "./uploadedImageMediaType";

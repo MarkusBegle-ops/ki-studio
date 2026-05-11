@@ -5,9 +5,11 @@
  * KI Studio API - AI-powered app builder platform
  * OpenAPI spec version: 0.1.0
  */
+import type { UploadedImage } from "./uploadedImage";
 
 export interface GenerateInput {
   /** @minLength 1 */
   prompt: string;
   isRefinement?: boolean;
+  images?: UploadedImage[];
 }

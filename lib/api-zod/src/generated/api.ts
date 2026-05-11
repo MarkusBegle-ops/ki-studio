@@ -106,6 +106,20 @@ export const GenerateProjectParams = zod.object({
 export const GenerateProjectBody = zod.object({
   prompt: zod.string().min(1),
   isRefinement: zod.boolean().optional(),
+  images: zod
+    .array(
+      zod.object({
+        data: zod.string().describe("Base64 encoded image data"),
+        mediaType: zod.enum([
+          "image/jpeg",
+          "image/png",
+          "image/gif",
+          "image/webp",
+        ]),
+        name: zod.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 /**
