@@ -29,6 +29,8 @@ export const ListProjectsResponseItem = zod.object({
   sourceUrl: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
+  generationStatus: zod.enum(["idle", "generating", "done", "error"]).nullish(),
+  generationError: zod.string().nullish(),
 });
 export const ListProjectsResponse = zod.array(ListProjectsResponseItem);
 
@@ -60,6 +62,8 @@ export const GetProjectResponse = zod.object({
   sourceUrl: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
+  generationStatus: zod.enum(["idle", "generating", "done", "error"]).nullish(),
+  generationError: zod.string().nullish(),
 });
 
 /**
@@ -87,6 +91,8 @@ export const UpdateProjectResponse = zod.object({
   sourceUrl: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
+  generationStatus: zod.enum(["idle", "generating", "done", "error"]).nullish(),
+  generationError: zod.string().nullish(),
 });
 
 /**
@@ -140,6 +146,8 @@ export const PublishProjectResponse = zod.object({
   sourceUrl: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
+  generationStatus: zod.enum(["idle", "generating", "done", "error"]).nullish(),
+  generationError: zod.string().nullish(),
 });
 
 /**
@@ -168,6 +176,10 @@ export const GetProjectsSummaryResponse = zod.object({
       sourceUrl: zod.string().nullish(),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
+      generationStatus: zod
+        .enum(["idle", "generating", "done", "error"])
+        .nullish(),
+      generationError: zod.string().nullish(),
     }),
   ),
 });

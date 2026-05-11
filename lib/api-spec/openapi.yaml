@@ -532,6 +532,13 @@ components:
         updatedAt:
           type: string
           format: date-time
+        generationStatus:
+          type: string
+          nullable: true
+          enum: [idle, generating, done, error]
+        generationError:
+          type: string
+          nullable: true
       required:
         - id
         - title

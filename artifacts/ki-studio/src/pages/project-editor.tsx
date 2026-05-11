@@ -41,21 +41,48 @@ export default function ProjectEditor() {
   const queryClient = useQueryClient();
 
   const [prompt, setPrompt] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generationStatus, setGenerationStatus] = useState<string>("");
   const [isRefinement, setIsRefinement] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
   const [copied, setCopied] = useState(false);
   const [autoGenTriggered, setAutoGenTriggered] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const prevStatusRef = useRef<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: project, isLoading: isProjectLoading } = useGetProject(id, {
-    query: { enabled: !!id, queryKey: getGetProjectQueryKey(id) },
+    query: {
+      enabled: !!id,
+      queryKey: getGetProjectQueryKey(id),
+      // Poll every 2.5 s while the AI is generating — stops automatically when done
+      refetchInterval: (query) => {
+        const status = (query.state.data as { generationStatus?: string } | undefined)?.generationStatus;
+        return status === "generating" ? 2500 : false;
+      },
+    },
   });
+
+  const generationStatus = (project as unknown as { generationStatus?: string } | undefined)?.generationStatus ?? "idle";
+  const isGenerating = generationStatus === "generating";
+
+  // Refresh iframe when generation finishes
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    if (prev === "generating" && generationStatus === "done") {
+      setIframeKey((k) => k + 1);
+      const convId = project?.conversationId;
+      if (convId) {
+        queryClient.invalidateQueries({ queryKey: getListAnthropicMessagesQueryKey(convId) });
+      }
+    }
+    if (prev === "generating" && generationStatus === "error") {
+      const errMsg = (project as unknown as { generationError?: string } | undefined)?.generationError;
+      toast({ title: "Fehler", description: errMsg ?? "Code konnte nicht generiert werden.", variant: "destructive" });
+    }
+    prevStatusRef.current = generationStatus;
+  }, [generationStatus, project, queryClient, toast]);
 
   const conversationId = project?.conversationId ?? 0;
   const { data: messages, isLoading: isMessagesLoading } = useListAnthropicMessages(conversationId, {
@@ -65,11 +92,11 @@ export default function ProjectEditor() {
     },
   });
 
-  const publishProject = usePublishProject();
-
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isGenerating, generationStatus]);
+  }, [messages, isGenerating]);
+
+  const publishProject = usePublishProject();
 
   const handleGenerate = useCallback(async (promptOverride?: string, imagesOverride?: AttachedImage[]) => {
     const currentPrompt = promptOverride ?? prompt;
@@ -79,12 +106,8 @@ export default function ProjectEditor() {
     if (!promptOverride) {
       setPrompt("");
       setAttachedImages([]);
-      // revoke preview URLs
       attachedImages.forEach(img => URL.revokeObjectURL(img.preview));
     }
-
-    setIsGenerating(true);
-    setGenerationStatus("Starte Generierung…");
 
     try {
       const base = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -104,53 +127,21 @@ export default function ProjectEditor() {
         body: JSON.stringify(body),
       });
 
-      if (!res.ok) throw new Error("Fehler bei der Anfrage");
-
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value);
-
-        for (const line of chunk.split("\n")) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const json = JSON.parse(line.slice(6));
-            if (json.done) {
-              setGenerationStatus("Abgeschlossen");
-              setIframeKey((k) => k + 1);
-              queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(id) });
-              setTimeout(() => queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(id) }), 600);
-            } else if (json.content) {
-              setGenerationStatus("Generiert Code…");
-            } else if (json.status) {
-              setGenerationStatus(json.status);
-            } else if (json.error) {
-              throw new Error(json.error);
-            }
-          } catch {
-            // ignore parse errors for incomplete chunks
-          }
-        }
+      if (!res.ok) {
+        const data = await res.json() as { error?: string };
+        throw new Error(data.error ?? "Fehler bei der Anfrage");
       }
 
-      queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(id) });
-      setTimeout(() => {
-        if (conversationId) {
-          queryClient.invalidateQueries({ queryKey: getListAnthropicMessagesQueryKey(conversationId) });
-        }
-        queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(id) });
-      }, 800);
-    } catch {
-      toast({ title: "Fehler", description: "Code konnte nicht generiert werden.", variant: "destructive" });
-      setGenerationStatus("Fehlgeschlagen");
-    } finally {
-      setIsGenerating(false);
-      setTimeout(() => setGenerationStatus(""), 2500);
+      // Immediately update query cache so UI shows "generating" without waiting for next poll
+      queryClient.setQueryData(getGetProjectQueryKey(id), (old: unknown) => {
+        if (!old || typeof old !== "object") return old;
+        return { ...old as object, generationStatus: "generating" };
+      });
+
+    } catch (err) {
+      toast({ title: "Fehler", description: err instanceof Error ? err.message : "Unbekannter Fehler", variant: "destructive" });
     }
-  }, [prompt, attachedImages, isGenerating, isRefinement, id, conversationId, queryClient, toast]);
+  }, [prompt, attachedImages, isGenerating, isRefinement, id, queryClient, toast]);
 
   // Auto-generate when project was created from URL analysis and never generated before
   useEffect(() => {
@@ -190,7 +181,6 @@ export default function ProjectEditor() {
         const reader = new FileReader();
         reader.onload = () => {
           const result = reader.result as string;
-          // Strip the data URL prefix (e.g. "data:image/png;base64,")
           resolve(result.split(",")[1]);
         };
         reader.onerror = reject;
@@ -208,7 +198,6 @@ export default function ProjectEditor() {
     if (newImages.length > 0) {
       setAttachedImages(prev => [...prev, ...newImages]);
     }
-    // Reset input so same file can be re-selected
     e.target.value = "";
   };
 
@@ -303,7 +292,13 @@ export default function ProjectEditor() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="font-semibold text-sm truncate leading-tight">{project.title}</h2>
-                {project.isPublished && (
+                {isGenerating && (
+                  <Badge variant="outline" className="bg-primary/8 text-primary border-primary/20 text-xs py-0 h-4.5 shrink-0 leading-none gap-1">
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    Generiert…
+                  </Badge>
+                )}
+                {!isGenerating && project.isPublished && (
                   <Badge variant="outline" className="bg-primary/8 text-primary border-primary/20 text-xs py-0 h-4.5 shrink-0 leading-none">
                     Live
                   </Badge>
@@ -370,7 +365,7 @@ export default function ProjectEditor() {
             ) : (
               <Button
                 onClick={handlePublish}
-                disabled={publishProject.isPending || !project.htmlCode}
+                disabled={publishProject.isPending || !project.htmlCode || isGenerating}
                 size="sm"
                 className="h-8 gap-1.5 text-xs glow-primary-sm hover:glow-primary transition-all"
                 data-testid="button-publish"
@@ -396,6 +391,12 @@ export default function ProjectEditor() {
                 <Sparkles className="w-3 h-3 text-primary" />
               </div>
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">KI Assistent</span>
+              {isGenerating && (
+                <span className="ml-auto text-[10px] text-primary/60 flex items-center gap-1">
+                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                  Läuft im Hintergrund
+                </span>
+              )}
             </div>
 
             {/* Messages */}
@@ -412,7 +413,7 @@ export default function ProjectEditor() {
                 </div>
               )}
 
-              {/* Description card — always visible */}
+              {/* Description card */}
               {project.description && (
                 <div className="rounded-xl border border-border/40 bg-card/40 px-3 py-2.5 space-y-1.5">
                   <div className="flex items-center gap-1.5">
@@ -443,7 +444,9 @@ export default function ProjectEditor() {
                 </div>
                 <div className="bg-card/60 border border-border/50 px-3 py-2.5 rounded-2xl rounded-tl-none max-w-[85%]">
                   <p className="text-xs text-foreground/70 leading-relaxed">
-                    {project.htmlCode
+                    {isGenerating
+                      ? `KI arbeitet gerade — du kannst den Tab schließen und später zurückkommen.`
+                      : project.htmlCode
                       ? `Projekt bereit. Beschreibe Änderungen — du kannst auch Bilder oder Screenshots anhängen.`
                       : project.sourceUrl
                       ? `Ich analysiere die URL und baue dir die App…`
@@ -489,7 +492,7 @@ export default function ProjectEditor() {
                 ))
               )}
 
-              {/* Active generation */}
+              {/* Active generation indicator */}
               {isGenerating && (
                 <div className="flex gap-2.5">
                   <div className="w-6 h-6 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
@@ -501,7 +504,7 @@ export default function ProjectEditor() {
                       <div className="typing-dot w-1.5 h-1.5 rounded-full bg-primary/60" />
                       <div className="typing-dot w-1.5 h-1.5 rounded-full bg-primary/60" />
                     </div>
-                    <span className="text-xs text-muted-foreground">{generationStatus}</span>
+                    <span className="text-xs text-muted-foreground">Generiert Code…</span>
                   </div>
                 </div>
               )}
@@ -527,9 +530,6 @@ export default function ProjectEditor() {
                       >
                         <X className="w-2.5 h-2.5" />
                       </button>
-                      <div className="absolute inset-0 rounded-lg bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <ImageIcon className="w-4 h-4 text-white" />
-                      </div>
                     </div>
                   ))}
                 </div>
@@ -547,7 +547,9 @@ export default function ProjectEditor() {
                     }
                   }}
                   placeholder={
-                    isRefinement
+                    isGenerating
+                      ? "KI generiert — Eingabe gesperrt…"
+                      : isRefinement
                       ? "Was soll geändert werden?"
                       : "Beschreibe, was die KI bauen soll…"
                   }
@@ -597,7 +599,7 @@ export default function ProjectEditor() {
                   )}
                 </div>
                 <p className="text-[10px] text-muted-foreground/30 pr-1">
-                  Shift + Enter für neue Zeile
+                  {isGenerating ? "Generierung läuft im Hintergrund…" : "Shift + Enter für neue Zeile"}
                 </p>
               </div>
             </div>
@@ -639,6 +641,16 @@ export default function ProjectEditor() {
                   <p className="text-base font-medium text-foreground/50 mb-2">Bereit für deine Anweisungen</p>
                   <p className="text-sm text-muted-foreground/40 max-w-xs leading-relaxed">
                     Schreibe links was du bauen möchtest — oder lade ein Screenshot hoch.
+                  </p>
+                </div>
+              ) : isGenerating && !project.htmlCode ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
+                  <div className="w-16 h-16 rounded-2xl bg-primary/5 border border-primary/10 flex items-center justify-center mb-5">
+                    <Loader2 className="w-7 h-7 text-primary/40 animate-spin" />
+                  </div>
+                  <p className="text-base font-medium text-foreground/50 mb-2">KI generiert deinen Code…</p>
+                  <p className="text-sm text-muted-foreground/40 max-w-xs leading-relaxed">
+                    Du kannst den Tab schließen — die Generierung läuft im Hintergrund weiter.
                   </p>
                 </div>
               ) : (

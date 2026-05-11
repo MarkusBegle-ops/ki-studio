@@ -13,6 +13,17 @@ export interface ApiError {
   error: string;
 }
 
+export type ProjectGenerationStatus =
+  | (typeof ProjectGenerationStatus)[keyof typeof ProjectGenerationStatus]
+  | null;
+
+export const ProjectGenerationStatus = {
+  idle: "idle",
+  generating: "generating",
+  done: "done",
+  error: "error",
+} as const;
+
 export interface Project {
   id: number;
   title: string;
@@ -28,6 +39,8 @@ export interface Project {
   sourceUrl?: string | null;
   createdAt: string;
   updatedAt: string;
+  generationStatus?: ProjectGenerationStatus;
+  generationError?: string | null;
 }
 
 export interface ProjectInput {

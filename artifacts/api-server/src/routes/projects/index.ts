@@ -247,45 +247,59 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
     return;
   }
 
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
+  // Already generating — don't start a second job
+  if (project.generationStatus === "generating") {
+    res.status(202).json({ queued: true, status: "generating" });
+    return;
+  }
 
-  const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+  // Mark as generating immediately so polling sees it
+  await db
+    .update(projectsTable)
+    .set({ generationStatus: "generating", generationError: null, updatedAt: new Date() })
+    .where(eq(projectsTable.id, project.id));
 
-  try {
-    let conversationId = project.conversationId;
+  // Return immediately — generation continues in the background
+  res.status(202).json({ queued: true, status: "generating" });
 
-    if (!conversationId) {
-      const [conv] = await db
-        .insert(conversationsTable)
-        .values({ title: project.title })
-        .returning();
-      conversationId = conv.id;
-      await db
-        .update(projectsTable)
-        .set({ conversationId, updatedAt: new Date() })
-        .where(eq(projectsTable.id, project.id));
-    }
+  // ── Background job (runs after response is sent) ──────────────────────────
+  const log = req.log;
+  const { prompt, isRefinement, images = [] } = parsed.data;
+  const projectId = project.id;
+  const projectTitle = project.title;
 
-    // Store text-only version in DB for history
-    await db.insert(messagesTable).values({
-      conversationId,
-      role: "user",
-      content: parsed.data.prompt,
-    });
+  (async () => {
+    try {
+      let conversationId = project.conversationId;
 
-    // Load history EXCLUDING the just-inserted message (we'll build it with images)
-    const history = await db
-      .select()
-      .from(messagesTable)
-      .where(eq(messagesTable.conversationId, conversationId))
-      .orderBy(messagesTable.createdAt);
+      if (!conversationId) {
+        const [conv] = await db
+          .insert(conversationsTable)
+          .values({ title: projectTitle })
+          .returning();
+        conversationId = conv.id;
+        await db
+          .update(projectsTable)
+          .set({ conversationId, updatedAt: new Date() })
+          .where(eq(projectsTable.id, projectId));
+      }
 
-    send({ status: "Generiere Code..." });
+      // Save user message (text only) to conversation history
+      await db.insert(messagesTable).values({
+        conversationId,
+        role: "user",
+        content: prompt,
+      });
 
-    const systemPrompt = parsed.data.isRefinement
-      ? `Du bist ein Elite-Webentwickler. Du hast bereits eine vollständige HTML-App generiert und sollst sie nun präzise verfeinern.
+      // Load full history (all but the just-inserted message will be context)
+      const history = await db
+        .select()
+        .from(messagesTable)
+        .where(eq(messagesTable.conversationId, conversationId))
+        .orderBy(messagesTable.createdAt);
+
+      const systemPrompt = isRefinement
+        ? `Du bist ein Elite-Webentwickler. Du hast bereits eine vollständige HTML-App generiert und sollst sie nun präzise verfeinern.
 
 WICHTIGE REGELN:
 - Setze JEDE Änderung vollständig um — kein Detail ist zu klein
@@ -295,7 +309,7 @@ WICHTIGE REGELN:
 - Gib die KOMPLETTE, überarbeitete HTML-Datei zurück — niemals nur Teile oder Snippets
 
 OUTPUT-FORMAT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen, KEINE Codeblöcke.`
-      : `Du bist ein Elite-Webentwickler und UI/UX-Designer. Erstelle eine professionelle, vollständige Web-App als einzelne HTML-Datei.
+        : `Du bist ein Elite-Webentwickler und UI/UX-Designer. Erstelle eine professionelle, vollständige Web-App als einzelne HTML-Datei.
 
 DEINE KERNAUFGABE: Setze ALLES um was der Nutzer beschreibt — bis ins kleinste Detail, vollständig ausgearbeitet, keine Abkürzungen, keine Platzhalter.
 
@@ -323,76 +337,70 @@ UMFANG: Schreibe so viel Code wie nötig — 500, 1000, 2000+ Zeilen wenn das zu
 
 OUTPUT-FORMAT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen, KEINE Codeblöcke.`;
 
-    // Build messages array — system prompt + past history + current message with optional images
-    const images = parsed.data.images ?? [];
-    const previousMessages = history.slice(0, -1); // all except the just-inserted message
+      type ChatMsg = Parameters<typeof openai.chat.completions.create>[0]["messages"][number];
 
-    type ChatMsg = Parameters<typeof openai.chat.completions.create>[0]["messages"][number];
+      const previousMessages = history.slice(0, -1);
+      const chatMessages: ChatMsg[] = [
+        { role: "system", content: systemPrompt },
+        ...previousMessages.map((m): ChatMsg => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+      ];
 
-    const chatMessages: ChatMsg[] = [
-      { role: "system", content: systemPrompt },
-      ...previousMessages.map((m): ChatMsg => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })),
-    ];
-
-    // Current user message — embed images as data URLs if provided
-    if (images.length > 0) {
-      chatMessages.push({
-        role: "user",
-        content: [
-          ...images.map((img) => ({
-            type: "image_url" as const,
-            image_url: { url: `data:${img.mediaType};base64,${img.data}` },
-          })),
-          { type: "text" as const, text: parsed.data.prompt },
-        ],
-      });
-    } else {
-      chatMessages.push({ role: "user", content: parsed.data.prompt });
-    }
-
-    let fullResponse = "";
-
-    const stream = await openai.chat.completions.create({
-      model: "gpt-5.4",
-      max_completion_tokens: 16000,
-      messages: chatMessages,
-      stream: true,
-    });
-
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content;
-      if (delta) {
-        fullResponse += delta;
-        send({ content: delta });
+      if (images.length > 0) {
+        chatMessages.push({
+          role: "user",
+          content: [
+            ...images.map((img) => ({
+              type: "image_url" as const,
+              image_url: { url: `data:${img.mediaType};base64,${img.data}` },
+            })),
+            { type: "text" as const, text: prompt },
+          ],
+        });
+      } else {
+        chatMessages.push({ role: "user", content: prompt });
       }
+
+      let fullResponse = "";
+
+      const stream = await openai.chat.completions.create({
+        model: "gpt-5.4",
+        max_completion_tokens: 16000,
+        messages: chatMessages,
+        stream: true,
+      });
+
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content;
+        if (delta) fullResponse += delta;
+      }
+
+      let htmlCode = fullResponse.trim();
+      if (htmlCode.startsWith("```")) {
+        htmlCode = htmlCode.replace(/^```(?:html)?\n?/, "").replace(/\n?```$/, "").trim();
+      }
+
+      await db.insert(messagesTable).values({
+        conversationId,
+        role: "assistant",
+        content: fullResponse,
+      });
+
+      await db
+        .update(projectsTable)
+        .set({ htmlCode, generationStatus: "done", updatedAt: new Date() })
+        .where(eq(projectsTable.id, projectId));
+
+    } catch (err) {
+      log.error({ err }, "Background generation error");
+      await db
+        .update(projectsTable)
+        .set({ generationStatus: "error", generationError: String(err instanceof Error ? err.message : err), updatedAt: new Date() })
+        .where(eq(projectsTable.id, projectId));
     }
-
-    let htmlCode = fullResponse.trim();
-    if (htmlCode.startsWith("```")) {
-      htmlCode = htmlCode.replace(/^```(?:html)?\n?/, "").replace(/\n?```$/, "").trim();
-    }
-
-    await db.insert(messagesTable).values({
-      conversationId,
-      role: "assistant",
-      content: fullResponse,
-    });
-
-    await db
-      .update(projectsTable)
-      .set({ htmlCode, updatedAt: new Date() })
-      .where(eq(projectsTable.id, project.id));
-
-    send({ done: true });
-    res.end();
-  } catch (err) {
-    req.log.error({ err }, "Generation error");
-    send({ error: "Fehler bei der Code-Generierung" });
-    res.end();
-  }
+  })();
 });
 
 router.post("/projects/:id/publish", async (req, res): Promise<void> => {

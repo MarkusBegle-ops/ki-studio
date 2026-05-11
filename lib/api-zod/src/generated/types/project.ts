@@ -5,6 +5,7 @@
  * KI Studio API - AI-powered app builder platform
  * OpenAPI spec version: 0.1.0
  */
+import type { ProjectGenerationStatus } from "./projectGenerationStatus";
 
 export interface Project {
   id: number;
@@ -21,4 +22,6 @@ export interface Project {
   sourceUrl?: string | null;
   createdAt: Date;
   updatedAt: Date;
+  generationStatus?: ProjectGenerationStatus;
+  generationError?: string | null;
 }

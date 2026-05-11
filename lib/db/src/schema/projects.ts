@@ -12,6 +12,8 @@ export const projectsTable = pgTable("projects", {
   publishedUrl: text("published_url"),
   conversationId: integer("conversation_id"),
   sourceUrl: text("source_url"),
+  generationStatus: text("generation_status").notNull().default("idle"),
+  generationError: text("generation_error"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

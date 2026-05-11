@@ -27,6 +27,7 @@ export * from "./logoutSuccess";
 export * from "./mobileTokenExchangeRequest";
 export * from "./mobileTokenExchangeSuccess";
 export * from "./project";
+export * from "./projectGenerationStatus";
 export * from "./projectInput";
 export * from "./projectsSummary";
 export * from "./projectUpdate";
