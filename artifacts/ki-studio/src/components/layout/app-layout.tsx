@@ -1,7 +1,7 @@
 import React from "react";
 import { Link } from "wouter";
 import { Sparkles, LogOut, ChevronDown } from "lucide-react";
-import { useAuth } from "@workspace/replit-auth-web";
+import { useAuth } from "@workspace/auth-web";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
