@@ -7,6 +7,7 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import NewProject from "@/pages/new-project";
 import ProjectEditor from "@/pages/project-editor";
+import Settings from "@/pages/settings";
 import { Sparkles, Zap, Eye, Globe, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/projekt/neu" component={NewProject} />
       <Route path="/projekt/:id" component={ProjectEditor} />
+      <Route path="/einstellungen" component={Settings} />
       <Route component={NotFound} />
     </Switch>
   );

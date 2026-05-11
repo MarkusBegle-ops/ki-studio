@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "wouter";
-import { Sparkles, LogOut, ChevronDown } from "lucide-react";
+import { Sparkles, LogOut, ChevronDown, Settings } from "lucide-react";
 import { useAuth } from "@workspace/auth-web";
 import { Button } from "@/components/ui/button";
 import {
@@ -62,6 +62,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     <p className="text-xs text-muted-foreground mt-1 truncate">{user.email}</p>
                   )}
                 </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/einstellungen" className="gap-2 cursor-pointer">
+                    <Settings className="h-3.5 w-3.5" />
+                    Einstellungen
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={logout}

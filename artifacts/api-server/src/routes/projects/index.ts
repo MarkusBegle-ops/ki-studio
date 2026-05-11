@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, count, isNotNull, and } from "drizzle-orm";
-import { db, projectsTable, conversations as conversationsTable, messages as messagesTable } from "@workspace/db";
+import { db, projectsTable, conversations as conversationsTable, messages as messagesTable, usersTable } from "@workspace/db";
 import { getOpenAIClient } from "@workspace/integrations-openai-ai-server";
 import {
   CreateProjectBody,
@@ -270,6 +270,9 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
 
   (async () => {
     try {
+      const [userRow] = await db.select({ openaiApiKey: usersTable.openaiApiKey }).from(usersTable).where(eq(usersTable.id, req.user.id));
+      const userApiKey = userRow?.openaiApiKey ?? null;
+
       let conversationId = project.conversationId;
 
       if (!conversationId) {
@@ -365,7 +368,7 @@ OUTPUT-FORMAT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdo
 
       let fullResponse = "";
 
-      const stream = await getOpenAIClient().chat.completions.create({
+      const stream = await getOpenAIClient(userApiKey).chat.completions.create({
         model: "gpt-5.4",
         max_completion_tokens: 16000,
         messages: chatMessages as Parameters<ReturnType<typeof getOpenAIClient>["chat"]["completions"]["create"]>[0]["messages"],

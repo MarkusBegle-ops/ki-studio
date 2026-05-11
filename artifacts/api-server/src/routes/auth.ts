@@ -141,6 +141,25 @@ router.post("/auth/login", async (req: Request, res: Response) => {
   });
 });
 
+router.get("/settings", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated()) { res.status(401).json({ error: "Nicht angemeldet" }); return; }
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user.id));
+  res.json({
+    hasOpenaiKey: !!(user?.openaiApiKey),
+    openaiKeyPreview: user?.openaiApiKey ? "sk-…" + user.openaiApiKey.slice(-4) : null,
+  });
+});
+
+router.post("/settings/openai-key", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated()) { res.status(401).json({ error: "Nicht angemeldet" }); return; }
+  const key = typeof req.body?.apiKey === "string" ? req.body.apiKey.trim() : "";
+  if (key && !key.startsWith("sk-")) {
+    res.status(400).json({ error: "Ungültiger API-Key (muss mit sk- beginnen)" }); return;
+  }
+  await db.update(usersTable).set({ openaiApiKey: key || null }).where(eq(usersTable.id, req.user.id));
+  res.json({ success: true, hasKey: !!key });
+});
+
 router.get("/logout", async (req: Request, res: Response) => {
   const sid = getSessionId(req);
   await clearSession(res, sid);
