@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { getOpenAIClient } from "@workspace/integrations-openai-ai-server";
+import { getAIClient } from "@workspace/integrations-openai-ai-server";
 
 const router: IRouter = Router();
 
@@ -83,12 +83,22 @@ export interface AnalysisResult {
   prompt: string;
 }
 
-async function getUserApiKey(userId: string): Promise<string | null> {
-  const [user] = await db.select({ openaiApiKey: usersTable.openaiApiKey }).from(usersTable).where(eq(usersTable.id, userId));
-  return user?.openaiApiKey ?? null;
+async function getUserKeys(userId: string) {
+  const [user] = await db.select({
+    openaiApiKey: usersTable.openaiApiKey,
+    groqApiKey: usersTable.groqApiKey,
+    geminiApiKey: usersTable.geminiApiKey,
+    openrouterApiKey: usersTable.openrouterApiKey,
+  }).from(usersTable).where(eq(usersTable.id, userId));
+  return {
+    openaiApiKey: user?.openaiApiKey ?? null,
+    groqApiKey: user?.groqApiKey ?? null,
+    geminiApiKey: user?.geminiApiKey ?? null,
+    openrouterApiKey: user?.openrouterApiKey ?? null,
+  };
 }
 
-async function analyzeOne(url: string, apiKey?: string | null): Promise<AnalysisResult> {
+async function analyzeOne(url: string, keys: Awaited<ReturnType<typeof getUserKeys>>): Promise<AnalysisResult> {
   let html: string;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 14000);
@@ -129,9 +139,10 @@ async function analyzeOne(url: string, apiKey?: string | null): Promise<Analysis
     `Seiteninhalt:\n${bodyText || "(kein Text extrahierbar)"}`;
 
   try {
-    const completion = await getOpenAIClient(apiKey).chat.completions.create({
-      model: "gpt-5.4",
-      max_completion_tokens: 2048,
+    const { client, textModel } = getAIClient(keys);
+    const completion = await client.chat.completions.create({
+      model: textModel,
+      max_tokens: 2048,
       messages: [
         { role: "system", content: systemMsg },
         { role: "user", content: userMsg },
@@ -157,9 +168,9 @@ router.post("/analyze-url", async (req, res): Promise<void> => {
   if (!req.isAuthenticated()) { res.status(401).json({ error: "Nicht angemeldet" }); return; }
   const rawUrl = typeof req.body?.url === "string" ? req.body.url.trim() : "";
   if (!rawUrl || !isValidUrl(rawUrl)) { res.status(400).json({ error: "Ungültige oder fehlende URL." }); return; }
-  const apiKey = await getUserApiKey(req.user.id);
+  const keys = await getUserKeys(req.user.id);
   try {
-    res.json(await analyzeOne(rawUrl, apiKey));
+    res.json(await analyzeOne(rawUrl, keys));
   } catch (err) {
     req.log.error({ err }, "analyze-url error");
     res.status(422).json({ error: friendlyError(err) });
@@ -181,8 +192,8 @@ router.post("/analyze-urls", async (req, res): Promise<void> => {
   const invalid = urls.filter((u) => !isValidUrl(u));
   if (invalid.length > 0) { res.status(400).json({ error: `Ungültige URL(s): ${invalid.join(", ")}` }); return; }
 
-  const apiKey = await getUserApiKey(req.user.id);
-  const settled = await Promise.allSettled(urls.map((u) => analyzeOne(u, apiKey)));
+  const keys = await getUserKeys(req.user.id);
+  const settled = await Promise.allSettled(urls.map((u) => analyzeOne(u, keys)));
 
   const results: Array<AnalysisResult | { url: string; error: string }> = settled.map(
     (s, i) => {
@@ -224,10 +235,11 @@ router.post("/analyze-urls/merge", async (req, res): Promise<void> => {
     .join("\n\n---\n\n");
 
   try {
-    const apiKey = await getUserApiKey(req.user.id);
-    const completion = await getOpenAIClient(apiKey).chat.completions.create({
-      model: "gpt-5.4",
-      max_completion_tokens: 4096,
+    const keys = await getUserKeys(req.user.id);
+    const { client, textModel } = getAIClient(keys);
+    const completion = await client.chat.completions.create({
+      model: textModel,
+      max_tokens: 4096,
       messages: [
         {
           role: "system",

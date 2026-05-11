@@ -141,22 +141,42 @@ router.post("/auth/login", async (req: Request, res: Response) => {
   });
 });
 
+function keyPreview(key: string | null | undefined, prefix = ""): string | null {
+  if (!key) return null;
+  return (prefix || key.slice(0, 6)) + "…" + key.slice(-4);
+}
+
 router.get("/settings", async (req: Request, res: Response) => {
   if (!req.isAuthenticated()) { res.status(401).json({ error: "Nicht angemeldet" }); return; }
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user.id));
   res.json({
-    hasOpenaiKey: !!(user?.openaiApiKey),
-    openaiKeyPreview: user?.openaiApiKey ? "sk-…" + user.openaiApiKey.slice(-4) : null,
+    openai:     { hasKey: !!(user?.openaiApiKey),     preview: keyPreview(user?.openaiApiKey, "sk-") },
+    groq:       { hasKey: !!(user?.groqApiKey),        preview: keyPreview(user?.groqApiKey, "gsk_") },
+    gemini:     { hasKey: !!(user?.geminiApiKey),      preview: keyPreview(user?.geminiApiKey, "AIza") },
+    openrouter: { hasKey: !!(user?.openrouterApiKey),  preview: keyPreview(user?.openrouterApiKey, "sk-or-") },
   });
 });
 
-router.post("/settings/openai-key", async (req: Request, res: Response) => {
+router.post("/settings/provider-key", async (req: Request, res: Response) => {
   if (!req.isAuthenticated()) { res.status(401).json({ error: "Nicht angemeldet" }); return; }
+  const provider = typeof req.body?.provider === "string" ? req.body.provider : "";
   const key = typeof req.body?.apiKey === "string" ? req.body.apiKey.trim() : "";
-  if (key && !key.startsWith("sk-")) {
-    res.status(400).json({ error: "Ungültiger API-Key (muss mit sk- beginnen)" }); return;
+
+  const columnMap: Record<string, keyof typeof usersTable.$inferInsert> = {
+    openai:     "openaiApiKey",
+    groq:       "groqApiKey",
+    gemini:     "geminiApiKey",
+    openrouter: "openrouterApiKey",
+  };
+
+  if (!columnMap[provider]) {
+    res.status(400).json({ error: "Unbekannter Anbieter" }); return;
   }
-  await db.update(usersTable).set({ openaiApiKey: key || null }).where(eq(usersTable.id, req.user.id));
+
+  await db.update(usersTable)
+    .set({ [columnMap[provider]]: key || null })
+    .where(eq(usersTable.id, req.user.id));
+
   res.json({ success: true, hasKey: !!key });
 });
 

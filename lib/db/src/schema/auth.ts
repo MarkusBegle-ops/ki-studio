@@ -19,6 +19,9 @@ export const usersTable = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   openaiApiKey: varchar("openai_api_key"),
+  groqApiKey: varchar("groq_api_key"),
+  geminiApiKey: varchar("gemini_api_key"),
+  openrouterApiKey: varchar("openrouter_api_key"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

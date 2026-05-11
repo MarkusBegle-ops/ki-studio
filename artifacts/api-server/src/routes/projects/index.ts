@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, count, isNotNull, and } from "drizzle-orm";
 import { db, projectsTable, conversations as conversationsTable, messages as messagesTable, usersTable } from "@workspace/db";
-import { getOpenAIClient } from "@workspace/integrations-openai-ai-server";
+import { getAIClient } from "@workspace/integrations-openai-ai-server";
 import {
   CreateProjectBody,
   GetProjectParams,
@@ -270,8 +270,19 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
 
   (async () => {
     try {
-      const [userRow] = await db.select({ openaiApiKey: usersTable.openaiApiKey }).from(usersTable).where(eq(usersTable.id, req.user.id));
-      const userApiKey = userRow?.openaiApiKey ?? null;
+      const [userRow] = await db.select({
+        openaiApiKey: usersTable.openaiApiKey,
+        groqApiKey: usersTable.groqApiKey,
+        geminiApiKey: usersTable.geminiApiKey,
+        openrouterApiKey: usersTable.openrouterApiKey,
+      }).from(usersTable).where(eq(usersTable.id, req.user.id));
+      const userKeys = {
+        openaiApiKey: userRow?.openaiApiKey ?? null,
+        groqApiKey: userRow?.groqApiKey ?? null,
+        geminiApiKey: userRow?.geminiApiKey ?? null,
+        openrouterApiKey: userRow?.openrouterApiKey ?? null,
+      };
+      const { client: aiClient, textModel, visionModel } = getAIClient(userKeys);
 
       let conversationId = project.conversationId;
 
@@ -368,10 +379,11 @@ OUTPUT-FORMAT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdo
 
       let fullResponse = "";
 
-      const stream = await getOpenAIClient(userApiKey).chat.completions.create({
-        model: "gpt-5.4",
-        max_completion_tokens: 16000,
-        messages: chatMessages as Parameters<ReturnType<typeof getOpenAIClient>["chat"]["completions"]["create"]>[0]["messages"],
+      const model = images.length > 0 ? visionModel : textModel;
+      const stream = await aiClient.chat.completions.create({
+        model,
+        max_tokens: 16000,
+        messages: chatMessages as Parameters<typeof aiClient.chat.completions.create>[0]["messages"],
         stream: true,
       });
 

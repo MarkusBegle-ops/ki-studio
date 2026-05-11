@@ -1,6 +1,73 @@
 import OpenAI from "openai";
 
-let _client: OpenAI | null = null;
+export interface UserApiKeys {
+  openaiApiKey?: string | null;
+  groqApiKey?: string | null;
+  geminiApiKey?: string | null;
+  openrouterApiKey?: string | null;
+}
+
+export interface AIClient {
+  client: OpenAI;
+  textModel: string;
+  visionModel: string;
+  provider: "openrouter" | "groq" | "gemini" | "openai";
+}
+
+export function getAIClient(keys: UserApiKeys): AIClient {
+  if (keys.openrouterApiKey) {
+    return {
+      client: new OpenAI({
+        apiKey: keys.openrouterApiKey,
+        baseURL: "https://openrouter.ai/api/v1",
+        defaultHeaders: {
+          "HTTP-Referer": "https://ki-studio.app",
+          "X-Title": "KI Studio",
+        },
+      }),
+      textModel: "google/gemini-2.0-flash-exp:free",
+      visionModel: "google/gemini-2.0-flash-exp:free",
+      provider: "openrouter",
+    };
+  }
+
+  if (keys.groqApiKey) {
+    return {
+      client: new OpenAI({
+        apiKey: keys.groqApiKey,
+        baseURL: "https://api.groq.com/openai/v1",
+      }),
+      textModel: "llama-3.3-70b-versatile",
+      visionModel: "llama-3.2-90b-vision-preview",
+      provider: "groq",
+    };
+  }
+
+  if (keys.geminiApiKey) {
+    return {
+      client: new OpenAI({
+        apiKey: keys.geminiApiKey,
+        baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+      }),
+      textModel: "gemini-2.0-flash",
+      visionModel: "gemini-2.0-flash",
+      provider: "gemini",
+    };
+  }
+
+  if (keys.openaiApiKey) {
+    return {
+      client: new OpenAI({ apiKey: keys.openaiApiKey }),
+      textModel: "gpt-4o",
+      visionModel: "gpt-4o",
+      provider: "openai",
+    };
+  }
+
+  throw new Error(
+    "Kein API-Key hinterlegt. Bitte trage deinen Key in den Einstellungen ein.",
+  );
+}
 
 export function getOpenAIClient(apiKey?: string | null): OpenAI {
   const key = apiKey ?? process.env.OPENAI_API_KEY;
@@ -9,11 +76,5 @@ export function getOpenAIClient(apiKey?: string | null): OpenAI {
       "Kein OpenAI API-Key hinterlegt. Bitte trage deinen Key in den Einstellungen ein.",
     );
   }
-  if (apiKey) {
-    return new OpenAI({ apiKey });
-  }
-  if (!_client) {
-    _client = new OpenAI({ apiKey: key });
-  }
-  return _client;
+  return new OpenAI({ apiKey: key });
 }
