@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, count, isNotNull, and } from "drizzle-orm";
 import { db, projectsTable, conversations as conversationsTable, messages as messagesTable } from "@workspace/db";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { openai } from "@workspace/integrations-openai-ai-server";
 import {
   CreateProjectBody,
   GetProjectParams,
@@ -323,54 +323,50 @@ UMFANG: Schreibe so viel Code wie nötig — 500, 1000, 2000+ Zeilen wenn das zu
 
 OUTPUT-FORMAT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen, KEINE Codeblöcke.`;
 
-    // Build messages array — past history as text, current message with optional images
+    // Build messages array — system prompt + past history + current message with optional images
     const images = parsed.data.images ?? [];
-    const previousMessages = history.slice(0, -1); // all except the last (just inserted)
+    const previousMessages = history.slice(0, -1); // all except the just-inserted message
 
-    type TextBlock = { type: "text"; text: string };
-    type ImageBlock = { type: "image"; source: { type: "base64"; media_type: string; data: string } };
-    type ContentBlock = TextBlock | ImageBlock;
-    type AnthropicMessage = { role: "user" | "assistant"; content: string | ContentBlock[] };
+    type ChatMsg = Parameters<typeof openai.chat.completions.create>[0]["messages"][number];
 
-    const chatMessages: AnthropicMessage[] = previousMessages.map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }));
+    const chatMessages: ChatMsg[] = [
+      { role: "system", content: systemPrompt },
+      ...previousMessages.map((m): ChatMsg => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })),
+    ];
 
-    // Current user message: include images if provided
+    // Current user message — embed images as data URLs if provided
     if (images.length > 0) {
-      const contentBlocks: ContentBlock[] = [
-        ...images.map((img): ImageBlock => ({
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: img.mediaType,
-            data: img.data,
-          },
-        })),
-        { type: "text", text: parsed.data.prompt },
-      ];
-      chatMessages.push({ role: "user", content: contentBlocks });
+      chatMessages.push({
+        role: "user",
+        content: [
+          ...images.map((img) => ({
+            type: "image_url" as const,
+            image_url: { url: `data:${img.mediaType};base64,${img.data}` },
+          })),
+          { type: "text" as const, text: parsed.data.prompt },
+        ],
+      });
     } else {
       chatMessages.push({ role: "user", content: parsed.data.prompt });
     }
 
     let fullResponse = "";
 
-    const stream = anthropic.messages.stream({
-      model: "claude-sonnet-4-6",
-      max_tokens: 16000,
-      system: systemPrompt,
-      messages: chatMessages as Parameters<typeof anthropic.messages.stream>[0]["messages"],
+    const stream = await openai.chat.completions.create({
+      model: "gpt-5.4",
+      max_completion_tokens: 16000,
+      messages: chatMessages,
+      stream: true,
     });
 
-    for await (const event of stream) {
-      if (
-        event.type === "content_block_delta" &&
-        event.delta.type === "text_delta"
-      ) {
-        fullResponse += event.delta.text;
-        send({ content: event.delta.text });
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content;
+      if (delta) {
+        fullResponse += delta;
+        send({ content: delta });
       }
     }
 

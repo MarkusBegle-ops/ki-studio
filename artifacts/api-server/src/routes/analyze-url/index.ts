@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { openai } from "@workspace/integrations-openai-ai-server";
 
 const router: IRouter = Router();
 
@@ -14,7 +14,6 @@ function isValidUrl(s: string): boolean {
   }
 }
 
-/** Remove control characters that the Anthropic API rejects (null bytes, etc.) */
 function sanitize(s: string): string {
   // eslint-disable-next-line no-control-regex
   return s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, " ").replace(/\s{2,}/g, " ").trim();
@@ -51,11 +50,9 @@ function extractMetaDesc(html: string): string {
   return sanitize(m ? m[1] : "");
 }
 
-/** Convert any error to a user-friendly German message, hiding raw API errors */
 function friendlyError(err: unknown): string {
   if (!(err instanceof Error)) return "Analyse fehlgeschlagen.";
   const msg = err.message;
-  // Hide raw Anthropic/HTTP API error JSON blobs
   if (msg.startsWith("{") || msg.includes('"type":"error"') || /^\d{3}\s*\{/.test(msg)) {
     return "KI-Analyse fehlgeschlagen. Bitte erneut versuchen.";
   }
@@ -69,7 +66,6 @@ function friendlyError(err: unknown): string {
   return msg.length > 120 ? msg.slice(0, 120) + "…" : msg;
 }
 
-/** Parse JSON from a possibly-partial or prefilled Claude response */
 function parseJson(raw: string): Record<string, unknown> {
   const first = raw.indexOf("{");
   const last = raw.lastIndexOf("}");
@@ -85,9 +81,7 @@ export interface AnalysisResult {
   prompt: string;
 }
 
-/** Fetch one URL and run Claude analysis. Throws with user-friendly messages. */
 async function analyzeOne(url: string): Promise<AnalysisResult> {
-  // ── 1. Fetch HTML ──────────────────────────────────────────────────────────
   let html: string;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 14000);
@@ -112,13 +106,11 @@ async function analyzeOne(url: string): Promise<AnalysisResult> {
     throw new Error(friendlyError(err));
   }
 
-  // ── 2. Extract text ────────────────────────────────────────────────────────
   const pageTitle = extractTitle(html);
   const metaDesc = extractMetaDesc(html);
   const bodyText = extractText(html);
 
-  // ── 3. Call Claude ─────────────────────────────────────────────────────────
-  const system =
+  const systemMsg =
     'Du bist ein App-Analyse-Experte. Analysiere den Inhalt einer Webseite. ' +
     'Antworte NUR mit einem JSON-Objekt, kein Markdown, kein Text davor oder danach. ' +
     'Format: {"title":"...","description":"...","features":["..."],"prompt":"..."}';
@@ -130,14 +122,16 @@ async function analyzeOne(url: string): Promise<AnalysisResult> {
     `Seiteninhalt:\n${bodyText || "(kein Text extrahierbar)"}`;
 
   try {
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 2048,
-      system,
-      messages: [{ role: "user", content: userMsg }],
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5.4",
+      max_completion_tokens: 2048,
+      messages: [
+        { role: "system", content: systemMsg },
+        { role: "user", content: userMsg },
+      ],
     });
 
-    const raw = message.content[0].type === "text" ? message.content[0].text : "";
+    const raw = completion.choices[0]?.message?.content ?? "";
     const parsed = parseJson(raw);
 
     return {
@@ -152,7 +146,6 @@ async function analyzeOne(url: string): Promise<AnalysisResult> {
   }
 }
 
-// ── Single URL (backwards-compatible) ────────────────────────────────────────
 router.post("/analyze-url", async (req, res): Promise<void> => {
   if (!req.isAuthenticated()) {
     res.status(401).json({ error: "Nicht angemeldet" });
@@ -171,7 +164,6 @@ router.post("/analyze-url", async (req, res): Promise<void> => {
   }
 });
 
-// ── Multiple URLs in parallel ─────────────────────────────────────────────────
 router.post("/analyze-urls", async (req, res): Promise<void> => {
   if (!req.isAuthenticated()) {
     res.status(401).json({ error: "Nicht angemeldet" });
@@ -208,7 +200,6 @@ router.post("/analyze-urls", async (req, res): Promise<void> => {
   res.json({ results });
 });
 
-// ── Merge multiple analyses into one combined app ─────────────────────────────
 router.post("/analyze-urls/merge", async (req, res): Promise<void> => {
   if (!req.isAuthenticated()) {
     res.status(401).json({ error: "Nicht angemeldet" });
@@ -229,7 +220,6 @@ router.post("/analyze-urls/merge", async (req, res): Promise<void> => {
     return;
   }
 
-  // Truncate individual prompts to keep total input size manageable
   const summary = valid
     .map(
       (a, i) =>
@@ -241,22 +231,24 @@ router.post("/analyze-urls/merge", async (req, res): Promise<void> => {
     .join("\n\n---\n\n");
 
   try {
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
-      system:
-        "Du bist ein App-Architekt. Kombiniere die Analysen mehrerer Apps zu EINER verbesserten App. " +
-        'Antworte NUR mit JSON, kein Markdown, kein erklärender Text. Format: {"title":"...","description":"...","features":["..."],"prompt":"..."}',
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5.4",
+      max_completion_tokens: 4096,
       messages: [
         {
-          role: "user",
+          role: "system",
           content:
-            `Führe diese ${valid.length} App-Analysen zu einer einzigen, besseren App zusammen:\n\n${summary}`,
+            "Du bist ein App-Architekt. Kombiniere die Analysen mehrerer Apps zu EINER verbesserten App. " +
+            'Antworte NUR mit JSON, kein Markdown, kein erklärender Text. Format: {"title":"...","description":"...","features":["..."],"prompt":"..."}',
+        },
+        {
+          role: "user",
+          content: `Führe diese ${valid.length} App-Analysen zu einer einzigen, besseren App zusammen:\n\n${summary}`,
         },
       ],
     });
 
-    const raw = message.content[0].type === "text" ? message.content[0].text : "";
+    const raw = completion.choices[0]?.message?.content ?? "";
     const parsed = parseJson(raw);
 
     res.json({
