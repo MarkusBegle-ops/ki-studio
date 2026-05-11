@@ -30,13 +30,14 @@ function setSessionCookie(res: Response, sid: string) {
   res.cookie(SESSION_COOKIE, sid, {
     httpOnly: true,
     secure: true,
-    sameSite: "lax",
+    sameSite: "none",
     path: "/",
     maxAge: SESSION_TTL,
   });
 }
 
 router.get("/auth/user", (req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
   res.json({ user: req.isAuthenticated() ? req.user : null });
 });
 
