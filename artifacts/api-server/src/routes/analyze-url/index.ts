@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { getOpenAIClient } from "@workspace/integrations-openai-ai-server";
 
 const router: IRouter = Router();
 
@@ -122,7 +122,7 @@ async function analyzeOne(url: string): Promise<AnalysisResult> {
     `Seiteninhalt:\n${bodyText || "(kein Text extrahierbar)"}`;
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAIClient().chat.completions.create({
       model: "gpt-5.4",
       max_completion_tokens: 2048,
       messages: [
@@ -231,7 +231,7 @@ router.post("/analyze-urls/merge", async (req, res): Promise<void> => {
     .join("\n\n---\n\n");
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAIClient().chat.completions.create({
       model: "gpt-5.4",
       max_completion_tokens: 4096,
       messages: [

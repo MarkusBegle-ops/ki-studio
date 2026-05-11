@@ -1,20 +1,14 @@
 import fs from "node:fs";
-import OpenAI, { toFile } from "openai";
+import { toFile } from "openai";
 import { Buffer } from "node:buffer";
 
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OPENAI_API_KEY must be set.");
-}
-
-export const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+import { getOpenAIClient } from "../client.js";
 
 export async function generateImageBuffer(
   prompt: string,
   size: "1024x1024" | "512x512" | "256x256" = "1024x1024"
 ): Promise<Buffer> {
-  const response = await openai.images.generate({
+  const response = await getOpenAIClient().images.generate({
     model: "gpt-image-1",
     prompt,
     size,
@@ -36,7 +30,7 @@ export async function editImages(
     )
   );
 
-  const response = await openai.images.edit({
+  const response = await getOpenAIClient().images.edit({
     model: "gpt-image-1",
     image: images,
     prompt,

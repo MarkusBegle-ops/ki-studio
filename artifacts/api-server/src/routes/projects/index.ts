@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, count, isNotNull, and } from "drizzle-orm";
 import { db, projectsTable, conversations as conversationsTable, messages as messagesTable } from "@workspace/db";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { getOpenAIClient } from "@workspace/integrations-openai-ai-server";
 import {
   CreateProjectBody,
   GetProjectParams,
@@ -337,7 +337,7 @@ UMFANG: Schreibe so viel Code wie nötig — 500, 1000, 2000+ Zeilen wenn das zu
 
 OUTPUT-FORMAT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen, KEINE Codeblöcke.`;
 
-      type ChatMsg = Parameters<typeof openai.chat.completions.create>[0]["messages"][number];
+      type ChatMsg = { role: "system" | "user" | "assistant"; content: string | Array<{ type: string; [k: string]: unknown }> };
 
       const previousMessages = history.slice(0, -1);
       const chatMessages: ChatMsg[] = [
@@ -365,10 +365,10 @@ OUTPUT-FORMAT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdo
 
       let fullResponse = "";
 
-      const stream = await openai.chat.completions.create({
+      const stream = await getOpenAIClient().chat.completions.create({
         model: "gpt-5.4",
         max_completion_tokens: 16000,
-        messages: chatMessages,
+        messages: chatMessages as Parameters<ReturnType<typeof getOpenAIClient>["chat"]["completions"]["create"]>[0]["messages"],
         stream: true,
       });
 
