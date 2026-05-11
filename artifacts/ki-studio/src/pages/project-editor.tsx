@@ -338,8 +338,8 @@ export default function ProjectEditor() {
                 </div>
               )}
 
-              {/* Description card — shown for new projects */}
-              {isNewProject && project.description && (
+              {/* Description card — always visible */}
+              {project.description && (
                 <div className="rounded-xl border border-border/40 bg-card/40 px-3 py-2.5 space-y-1.5">
                   <div className="flex items-center gap-1.5">
                     <Sparkles className="w-3 h-3 text-primary/60 shrink-0" />
