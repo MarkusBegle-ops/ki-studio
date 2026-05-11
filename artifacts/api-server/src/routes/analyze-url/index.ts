@@ -95,11 +95,25 @@ async function analyzeOne(url: string): Promise<AnalysisResult> {
     model: "claude-sonnet-4-6",
     max_tokens: 2048,
     system,
-    messages: [{ role: "user", content: userMsg }],
+    messages: [
+      { role: "user", content: userMsg },
+      { role: "assistant", content: '{"title":' },
+    ],
   });
 
-  const raw = message.content[0].type === "text" ? message.content[0].text : "";
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  const continuation = message.content[0].type === "text" ? message.content[0].text : "";
+  const raw = '{"title":' + continuation;
+
+  let jsonToParse = raw;
+  try {
+    const firstBrace = raw.indexOf("{");
+    const lastBrace = raw.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1) {
+      jsonToParse = raw.slice(firstBrace, lastBrace + 1);
+    }
+  } catch { /* fall through to regex */ }
+
+  const jsonMatch = jsonToParse.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("KI-Antwort konnte nicht verarbeitet werden");
 
   const parsed = JSON.parse(jsonMatch[0]) as {
@@ -199,36 +213,45 @@ router.post("/analyze-urls/merge", async (req, res): Promise<void> => {
     return;
   }
 
+  // Truncate prompts so total input stays manageable for Claude
   const summary = valid
-    .map((a, i) => `### App ${i + 1}: ${a.title}\nURL: ${a.url}\n\nBeschreibung: ${a.description}\n\nFeatures: ${a.features.join(", ")}\n\nPrompt:\n${a.prompt}`)
+    .map((a, i) =>
+      `App ${i + 1}: ${a.title}\nFeatures: ${a.features.slice(0, 10).join(", ")}\nBeschreibung: ${a.description.slice(0, 400)}\nPrompt-Auszug: ${a.prompt.slice(0, 600)}`,
+    )
     .join("\n\n---\n\n");
 
-  const system = `Du bist ein erfahrener App-Entwickler und Designer. Du erhältst Analysen mehrerer Web-Apps und sollst eine neue, kombinierte App konzipieren, die die besten Ideen, Features und Design-Elemente aller Quellen vereint. Antworte ausschließlich mit einem JSON-Objekt (kein Markdown):
-{
-  "title": "prägnanter Name für die kombinierte App (auf Deutsch)",
-  "description": "Was die kombinierte App kann — wie sie die besten Elemente aller Quellen vereint — mindestens 4 Sätze",
-  "features": ["Feature 1", "Feature 2", ...],
-  "prompt": "ausführlicher Entwicklungs-Prompt (mindestens 300 Wörter) der genau beschreibt wie die kombinierte App gebaut werden soll — Layout, Farben, alle Features, Interaktionen, UI-Komponenten"
-}`;
+  const userMsg = `Führe diese ${valid.length} App-Analysen zu EINER kombinierten App zusammen. Gib NUR ein JSON-Objekt zurück, ohne Erklärungen:\n\n${summary}`;
 
   try {
     const message = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 3000,
-      system,
-      messages: [{ role: "user", content: `Führe diese ${valid.length} App-Analysen zu einer einzigen, besseren App zusammen:\n\n${summary}` }],
+      max_tokens: 4096,
+      system:
+        "Du bist ein App-Architekt. Kombiniere mehrere App-Analysen zu einer einzigen, verbesserten App-Beschreibung. Antworte NUR mit rohem JSON — kein Markdown, keine Erklärungen, kein Text davor oder danach. Beginne deine Antwort direkt mit { und beende sie mit }.",
+      messages: [
+        { role: "user", content: userMsg },
+        // Prefill: force Claude to start with { — guarantees JSON output
+        { role: "assistant", content: '{"title":' },
+      ],
     });
 
-    const raw = message.content[0].type === "text" ? message.content[0].text : "";
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("KI-Antwort konnte nicht verarbeitet werden");
+    // Reassemble full JSON (prefill + Claude continuation)
+    const continuation = message.content[0].type === "text" ? message.content[0].text : "";
+    const raw = '{"title":' + continuation;
 
-    const parsed = JSON.parse(jsonMatch[0]) as {
-      title?: string;
-      description?: string;
-      features?: string[];
-      prompt?: string;
-    };
+    let parsed: { title?: string; description?: string; features?: string[]; prompt?: string };
+    try {
+      // Find outermost JSON object
+      const firstBrace = raw.indexOf("{");
+      const lastBrace = raw.lastIndexOf("}");
+      if (firstBrace === -1 || lastBrace === -1) throw new Error("Kein JSON");
+      parsed = JSON.parse(raw.slice(firstBrace, lastBrace + 1));
+    } catch {
+      req.log.warn({ raw: raw.slice(0, 500) }, "Merge JSON parse failed, attempting extraction");
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error("KI-Antwort enthält kein gültiges JSON");
+      parsed = JSON.parse(m[0]);
+    }
 
     res.json({
       title: parsed.title ?? "Kombiniertes Projekt",
@@ -238,7 +261,7 @@ router.post("/analyze-urls/merge", async (req, res): Promise<void> => {
     });
   } catch (err) {
     req.log.error({ err }, "Merge analysis error");
-    res.status(500).json({ error: "Zusammenführen fehlgeschlagen." });
+    res.status(500).json({ error: "Zusammenführen fehlgeschlagen. Bitte erneut versuchen." });
   }
 });
 
