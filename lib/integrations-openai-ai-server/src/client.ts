@@ -64,14 +64,14 @@ export function getAIClient(keys: UserApiKeys): AIClient {
     };
   }
 
-  // DeepSeek R1 via Pollinations — kein API-Key nötig, kostenlos, speziell für Code
+  // Pollinations AI — kein API-Key nötig, kostenlos
   return {
     client: new OpenAI({
       apiKey: "pollinations",
       baseURL: "https://text.pollinations.ai/openai",
     }),
-    textModel: "deepseek-r1",
-    visionModel: "openai",
+    textModel: "openai-fast",
+    visionModel: "openai-fast",
     provider: "pollinations",
   };
 }

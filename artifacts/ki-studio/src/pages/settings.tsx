@@ -282,11 +282,11 @@ export default function Settings() {
                     <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <CardTitle className="text-sm font-semibold">DeepSeek R1</CardTitle>
+                        <CardTitle className="text-sm font-semibold">Pollinations AI</CardTitle>
                         <Badge className="text-[10px] px-1.5 py-0 border bg-primary/15 text-primary border-primary/20">Eingebaut · Kein Key nötig</Badge>
                       </div>
                       <CardDescription className="text-xs mt-0.5">
-                        Speziell für Programmierung entwickelt — kostenlos, kein Account, kein API-Key. Einer der besten Code-KI-Modelle weltweit.
+                        Kostenlos, kein Account, kein API-Key. Reasoning-Modell — gut für Code-Generierung geeignet.
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
