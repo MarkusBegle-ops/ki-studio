@@ -134,15 +134,11 @@ async function analyzeOne(url: string): Promise<AnalysisResult> {
       model: "claude-sonnet-4-6",
       max_tokens: 2048,
       system,
-      messages: [
-        { role: "user", content: userMsg },
-        { role: "assistant", content: '{"title":' },
-      ],
+      messages: [{ role: "user", content: userMsg }],
     });
 
-    const continuation =
-      message.content[0].type === "text" ? message.content[0].text : "";
-    const parsed = parseJson('{"title":' + continuation);
+    const raw = message.content[0].type === "text" ? message.content[0].text : "";
+    const parsed = parseJson(raw);
 
     return {
       url,
@@ -257,13 +253,11 @@ router.post("/analyze-urls/merge", async (req, res): Promise<void> => {
           content:
             `Führe diese ${valid.length} App-Analysen zu einer einzigen, besseren App zusammen:\n\n${summary}`,
         },
-        { role: "assistant", content: '{"title":' },
       ],
     });
 
-    const continuation =
-      message.content[0].type === "text" ? message.content[0].text : "";
-    const parsed = parseJson('{"title":' + continuation);
+    const raw = message.content[0].type === "text" ? message.content[0].text : "";
+    const parsed = parseJson(raw);
 
     res.json({
       title: typeof parsed.title === "string" ? parsed.title : "Kombiniertes Projekt",
