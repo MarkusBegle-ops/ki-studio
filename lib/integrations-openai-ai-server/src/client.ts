@@ -88,8 +88,7 @@ export function getAIClient(keys: UserApiKeys): AIClient {
   }
 
   // Pollinations AI — kein API-Key nötig, kostenlos
-  // openai = GPT-4o equivalent (Planung & Review)
-  // qwen-coder = Qwen 2.5 Coder 32B (speziell für Code — deutlich besser!)
+  // openai = GPT-4o equivalent — das einzige zuverlässige Modell auf der Legacy-API
   return {
     client: new OpenAI({
       apiKey: "pollinations",
@@ -97,7 +96,7 @@ export function getAIClient(keys: UserApiKeys): AIClient {
     }),
     textModel: "openai",
     visionModel: "openai",
-    codeModel: "qwen-coder",
+    codeModel: "openai",
     provider: "pollinations",
   };
 }
@@ -106,7 +105,7 @@ export function getAIClient(keys: UserApiKeys): AIClient {
  * Returns a Pollinations client that is ALWAYS available (no API key needed).
  * Used as a support/review AI regardless of which primary provider is active.
  * reviewModel = openai (GPT-4o equiv) — best reasoning for catching bugs
- * codeReviewModel = qwen-coder — specialized for reading and fixing code
+ * codeReviewModel = openai — the only reliable model on Pollinations legacy API
  */
 export function getSupportClient(): { client: OpenAI; reviewModel: string; codeReviewModel: string } {
   return {
@@ -115,7 +114,7 @@ export function getSupportClient(): { client: OpenAI; reviewModel: string; codeR
       baseURL: "https://text.pollinations.ai/openai",
     }),
     reviewModel: "openai",
-    codeReviewModel: "qwen-coder",
+    codeReviewModel: "openai",
   };
 }
 
