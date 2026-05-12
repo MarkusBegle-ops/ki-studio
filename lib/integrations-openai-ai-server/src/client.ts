@@ -65,13 +65,14 @@ export function getAIClient(keys: UserApiKeys): AIClient {
   }
 
   // Pollinations AI — kein API-Key nötig, kostenlos
+  // openai = GPT-4o equivalent (kostenlos!), qwen-coder = Qwen 2.5 Coder 32B (beste für Code)
   return {
     client: new OpenAI({
       apiKey: "pollinations",
       baseURL: "https://text.pollinations.ai/openai",
     }),
-    textModel: "openai-fast",
-    visionModel: "openai-fast",
+    textModel: "openai",
+    visionModel: "openai",
     provider: "pollinations",
   };
 }

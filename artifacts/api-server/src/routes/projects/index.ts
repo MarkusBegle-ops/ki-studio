@@ -315,80 +315,118 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
       // Current HTML (for refinement context)
       const currentHtml = project.htmlCode ?? "";
 
-      const systemPrompt = isRefinement
-        ? `Du bist ein Elite-Webentwickler. Du hast bereits eine vollständige HTML-App generiert. Verfeinere sie jetzt präzise anhand der Nutzeranweisung.
-
-AKTUELLE APP (diese sollst du überarbeiten):
-\`\`\`html
-${currentHtml.slice(0, 60000)}
-\`\`\`
-
-REGELN:
-- Setze JEDE Änderung vollständig um — kein Detail ist zu klein
-- Behalte ALLE bestehenden Funktionen bei, es sei denn der Nutzer möchte explizit etwas entfernen
-- Verbessere gleichzeitig Qualität, Performance und Aussehen wo möglich
-- Wenn Bilder/Screenshots hochgeladen wurden, passe das Design EXAKT an
-- Gib die KOMPLETTE überarbeitete HTML-Datei zurück — niemals nur Teile
-
-OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen.`
-        : `Du bist ein Elite-Webentwickler und UI/UX-Designer. Erstelle eine professionelle, vollständige Web-App als einzelne HTML-Datei.
-
-KERNAUFGABE: Setze ALLES um was der Nutzer beschreibt — vollständig ausgearbeitet, keine Platzhalter, keine Abkürzungen.
-
-QUALITÄTSSTANDARDS:
-1. VOLLSTÄNDIGKEIT: Jede Funktion vollständig implementiert — kein "TODO", kein "coming soon"
-2. DESIGN: Modernes, professionelles UI — Farben, Typographie, Hover-Effekte, Animationen
-3. FUNKTIONALITÄT: Alle Interaktionen funktionieren — Formulare, Navigation, Filter, Suche
-4. DATEN: Realistische Beispieldaten (10-20 Einträge) damit die App sofort lebendig wirkt
-5. RESPONSIVITÄT: Perfektes Layout auf Desktop, Tablet und Mobile
-6. DETAILS: Hover-States, Lade-Animationen, Error-States, Leer-Zustände
-
-TECHNIK:
-- Einzelne HTML-Datei mit allem eingebettet (CSS in <style>, JS in <script>)
-- CDN-Bibliotheken erlaubt: Chart.js, Alpine.js, Lucide Icons, Google Fonts, Tailwind CDN usw.
-- Keine externen API-Aufrufe — alles client-seitig mit Mock-Daten
-- Sprache: Deutsch (außer der Nutzer gibt etwas anderes an)
-
-UMFANG: Schreibe so viel Code wie nötig — 500 bis 2000+ Zeilen. Qualität vor Kürze.
-
-OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen.`;
-
       type ChatMsg = { role: "system" | "user" | "assistant"; content: string | Array<{ type: string; [k: string]: unknown }> };
 
       // Only include user messages as context — assistant messages contained full HTML (huge), skip them
       const previousMessages = history.slice(0, -1);
-      const chatMessages: ChatMsg[] = [
-        { role: "system", content: systemPrompt },
-        ...previousMessages
-          .filter((m) => m.role === "user")
-          .map((m): ChatMsg => ({
-            role: "user",
-            content: m.content,
-          })),
-      ];
+      const userHistory = previousMessages
+        .filter((m) => m.role === "user")
+        .map((m): ChatMsg => ({ role: "user", content: m.content }));
 
-      if (images.length > 0) {
-        chatMessages.push({
-          role: "user",
-          content: [
-            ...images.map((img) => ({
-              type: "image_url" as const,
-              image_url: { url: `data:${img.mediaType};base64,${img.data}` },
-            })),
-            { type: "text" as const, text: prompt },
-          ],
-        });
-      } else {
-        chatMessages.push({ role: "user", content: prompt });
+      const model = images.length > 0 ? visionModel : textModel;
+
+      // ── STEP 1: Planning (only for new generation, not refinement) ──────────
+      // The AI first creates a concise implementation plan before writing code.
+      // This "think first" approach dramatically improves the final output quality.
+      let implementationPlan = "";
+
+      if (!isRefinement) {
+        const planningMessages: ChatMsg[] = [
+          {
+            role: "system",
+            content: `Du bist ein erfahrener Softwarearchitekt. Erstelle einen präzisen Implementierungsplan für eine Web-App.
+
+Dein Plan soll enthalten:
+1. ZWECK: Was macht die App (1-2 Sätze)
+2. SCREENS/SEITEN: Welche Views/Bereiche gibt es
+3. KOMPONENTEN: Wichtigste UI-Elemente und ihre Funktion
+4. DATEN: Welche Beispieldaten werden benötigt (konkrete Beispiele)
+5. DESIGN: Farbschema, Stil, besondere visuelle Elemente
+6. TECHNOLOGIE: Welche CDN-Libraries sinnvoll sind (Chart.js, Alpine.js, etc.)
+
+Antworte NUR mit dem Plan — kompakt, präzise, max. 300 Wörter.`,
+          },
+          ...userHistory,
+          ...(images.length > 0
+            ? [{ role: "user" as const, content: [
+                ...images.map((img) => ({ type: "image_url" as const, image_url: { url: `data:${img.mediaType};base64,${img.data}` } })),
+                { type: "text" as const, text: prompt },
+              ]}]
+            : [{ role: "user" as const, content: prompt }]),
+        ];
+
+        try {
+          const planStream = await aiClient.chat.completions.create({
+            model,
+            max_tokens: 800,
+            temperature: 0.3,
+            messages: planningMessages as Parameters<typeof aiClient.chat.completions.create>[0]["messages"],
+            stream: true,
+          });
+          for await (const chunk of planStream) {
+            const delta = chunk.choices[0]?.delta?.content;
+            if (delta) implementationPlan += delta;
+          }
+        } catch {
+          // Planning step failed — continue without plan (still better than nothing)
+          implementationPlan = "";
+        }
       }
+
+      // ── STEP 2: Code generation ───────────────────────────────────────────────
+      const codeSystemPrompt = isRefinement
+        ? `Du bist ein Elite-Webentwickler. Du hast bereits eine vollständige HTML-App generiert. Verfeinere sie präzise anhand der Nutzeranweisung.
+
+AKTUELLE APP:
+\`\`\`html
+${currentHtml.slice(0, 55000)}
+\`\`\`
+
+REGELN:
+- Setze JEDE Änderung vollständig um — kein Detail zu klein
+- Behalte ALLE bestehenden Funktionen, außer wenn explizit anders gewünscht
+- Verbessere Qualität, Performance und Aussehen wo möglich
+- Wenn Bilder/Screenshots hochgeladen: Design EXAKT anpassen
+- Gib die KOMPLETTE überarbeitete HTML-Datei zurück
+
+OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen.`
+        : `Du bist ein Elite-Webentwickler und UI/UX-Designer. Setze den folgenden Plan als vollständige, professionelle Web-App in einer einzigen HTML-Datei um.
+
+${implementationPlan ? `IMPLEMENTIERUNGSPLAN:\n${implementationPlan}\n\n` : ""}QUALITÄTSSTANDARDS — alle MÜSSEN erfüllt sein:
+1. VOLLSTÄNDIGKEIT: Jede Funktion vollständig implementiert — kein "TODO", keine Platzhalter
+2. DESIGN: Professionelles, modernes UI — sorgfältige Farben, Typographie, Hover-Effekte, Übergänge
+3. FUNKTIONALITÄT: Alle Interaktionen funktionieren — Formulare, Navigation, Filter, Animationen
+4. DATEN: Mindestens 10-15 realistische Beispieldatensätze — die App soll sofort lebendig wirken
+5. RESPONSIVITÄT: Einwandfreies Layout auf Desktop, Tablet und Mobile
+6. DETAILS: Hover-States, Lade-Animationen, Fehlerzustände, leere Zustände
+
+TECHNISCHE VORGABEN:
+- Einzelne HTML-Datei: CSS in <style>, JS in <script>
+- CDN-Libraries nach Bedarf: Tailwind CSS, Chart.js, Alpine.js, Lucide Icons, Google Fonts, Animate.css
+- Keine externen API-Aufrufe — alles client-seitig mit eingebetteten Mock-Daten
+- Sprache: Deutsch (außer der Nutzer gibt explizit etwas anderes an)
+- Umfang: So viel Code wie nötig — 800 bis 3000+ Zeilen
+
+OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen.`;
+
+      const codeMessages: ChatMsg[] = [
+        { role: "system", content: codeSystemPrompt },
+        ...userHistory,
+        ...(images.length > 0
+          ? [{ role: "user" as const, content: [
+              ...images.map((img) => ({ type: "image_url" as const, image_url: { url: `data:${img.mediaType};base64,${img.data}` } })),
+              { type: "text" as const, text: prompt },
+            ]}]
+          : [{ role: "user" as const, content: prompt }]),
+      ];
 
       let fullResponse = "";
 
-      const model = images.length > 0 ? visionModel : textModel;
       const stream = await aiClient.chat.completions.create({
         model,
         max_tokens: 16000,
-        messages: chatMessages as Parameters<typeof aiClient.chat.completions.create>[0]["messages"],
+        temperature: 0.2,
+        messages: codeMessages as Parameters<typeof aiClient.chat.completions.create>[0]["messages"],
         stream: true,
       });
 
@@ -397,10 +435,30 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
         if (delta) fullResponse += delta;
       }
 
+      // Robust HTML extraction — handles code blocks, leading text, any wrapping
       let htmlCode = fullResponse.trim();
-      if (htmlCode.startsWith("```")) {
-        htmlCode = htmlCode.replace(/^```(?:html)?\n?/, "").replace(/\n?```$/, "").trim();
+
+      // 1. If inside a code block, extract the content
+      const codeBlockMatch = htmlCode.match(/```(?:html)?\s*\n?([\s\S]*?)\n?```/is);
+      if (codeBlockMatch?.[1]) {
+        htmlCode = codeBlockMatch[1].trim();
       }
+
+      // 2. Find <!DOCTYPE html> and slice from there — ignores any leading explanation text
+      const doctypeIdx = htmlCode.toLowerCase().indexOf("<!doctype html>");
+      if (doctypeIdx > 0) {
+        htmlCode = htmlCode.slice(doctypeIdx);
+      }
+
+      // 3. If still no DOCTYPE, try finding <html> as fallback
+      if (!htmlCode.toLowerCase().startsWith("<!doctype") && !htmlCode.toLowerCase().startsWith("<html")) {
+        const htmlTagIdx = htmlCode.toLowerCase().indexOf("<html");
+        if (htmlTagIdx > 0) {
+          htmlCode = htmlCode.slice(htmlTagIdx);
+        }
+      }
+
+      htmlCode = htmlCode.trim();
 
       await db.insert(messagesTable).values({
         conversationId,
