@@ -14,6 +14,7 @@ interface SettingsData {
   groq: ProviderStatus;
   gemini: ProviderStatus;
   openrouter: ProviderStatus;
+  mistral: ProviderStatus;
 }
 
 interface ProviderConfig {
@@ -74,6 +75,18 @@ const PROVIDERS: ProviderConfig[] = [
     keyUrlLabel: "platform.openai.com/api-keys",
     description: "GPT-4o — höchste Qualität, aber kostenpflichtig (sehr günstig pro Nutzung).",
     free: false,
+  },
+  {
+    id: "mistral",
+    name: "Mistral AI",
+    badge: "Kostenlos",
+    badgeColor: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
+    placeholder: "…",
+    keyUrl: "https://console.mistral.ai/api-keys",
+    keyUrlLabel: "console.mistral.ai/api-keys",
+    description: "Codestral — Mistrals Spezialmodell für Code. Kostenlos für Code-Generierung.",
+    free: true,
+    note: "Codestral ist speziell für HTML/CSS/JS trainiert — sehr gute Codequalität.",
   },
 ];
 
@@ -192,7 +205,7 @@ export default function Settings() {
     fetch("/api/settings", { credentials: "include", cache: "no-store" })
       .then(r => r.json() as Promise<SettingsData>)
       .then(setSettings)
-      .catch(() => setSettings({ openai: { hasKey: false, preview: null }, groq: { hasKey: false, preview: null }, gemini: { hasKey: false, preview: null }, openrouter: { hasKey: false, preview: null } }))
+      .catch(() => setSettings({ openai: { hasKey: false, preview: null }, groq: { hasKey: false, preview: null }, gemini: { hasKey: false, preview: null }, openrouter: { hasKey: false, preview: null }, mistral: { hasKey: false, preview: null } }))
       .finally(() => setIsLoading(false));
   }, []);
 
@@ -272,7 +285,7 @@ export default function Settings() {
             <div className="space-y-3">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-0.5">KI-Anbieter</p>
               <p className="text-xs text-muted-foreground -mt-1 px-0.5">
-                KI Studio nutzt automatisch den besten verfügbaren Anbieter. Priorität: OpenRouter → Groq → Gemini → OpenAI → Pollinations (immer aktiv).
+                KI Studio nutzt automatisch den besten verfügbaren Anbieter. Priorität: OpenRouter → Groq → Gemini → OpenAI → Mistral (Codestral) → Pollinations (immer aktiv, 2 Modelle kombiniert).
               </p>
 
               {/* Pollinations — built-in, always available */}

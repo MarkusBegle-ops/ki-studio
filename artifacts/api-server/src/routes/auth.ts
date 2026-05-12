@@ -154,6 +154,7 @@ router.get("/settings", async (req: Request, res: Response) => {
     groq:       { hasKey: !!(user?.groqApiKey),        preview: keyPreview(user?.groqApiKey, "gsk_") },
     gemini:     { hasKey: !!(user?.geminiApiKey),      preview: keyPreview(user?.geminiApiKey, "AIza") },
     openrouter: { hasKey: !!(user?.openrouterApiKey),  preview: keyPreview(user?.openrouterApiKey, "sk-or-") },
+    mistral:    { hasKey: !!(user?.mistralApiKey),     preview: keyPreview(user?.mistralApiKey) },
   });
 });
 
@@ -167,6 +168,7 @@ router.post("/settings/provider-key", async (req: Request, res: Response) => {
     groq:       "groqApiKey",
     gemini:     "geminiApiKey",
     openrouter: "openrouterApiKey",
+    mistral:    "mistralApiKey",
   };
 
   if (!columnMap[provider]) {

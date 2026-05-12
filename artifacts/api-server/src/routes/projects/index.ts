@@ -275,14 +275,16 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
         groqApiKey: usersTable.groqApiKey,
         geminiApiKey: usersTable.geminiApiKey,
         openrouterApiKey: usersTable.openrouterApiKey,
+        mistralApiKey: usersTable.mistralApiKey,
       }).from(usersTable).where(eq(usersTable.id, req.user.id));
       const userKeys = {
         openaiApiKey: userRow?.openaiApiKey ?? null,
         groqApiKey: userRow?.groqApiKey ?? null,
         geminiApiKey: userRow?.geminiApiKey ?? null,
         openrouterApiKey: userRow?.openrouterApiKey ?? null,
+        mistralApiKey: userRow?.mistralApiKey ?? null,
       };
-      const { client: aiClient, textModel, visionModel } = getAIClient(userKeys);
+      const { client: aiClient, textModel, visionModel, codeModel, provider } = getAIClient(userKeys);
 
       let conversationId = project.conversationId;
 
@@ -323,11 +325,13 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
         .filter((m) => m.role === "user")
         .map((m): ChatMsg => ({ role: "user", content: m.content }));
 
-      const model = images.length > 0 ? visionModel : textModel;
+      const planModel = images.length > 0 ? visionModel : textModel;
+      const genModel = images.length > 0 ? visionModel : codeModel;
 
       // ── STEP 1: Planning (only for new generation, not refinement) ──────────
       // The AI first creates a concise implementation plan before writing code.
       // This "think first" approach dramatically improves the final output quality.
+      // For Pollinations/Mistral: planModel = reasoning model, genModel = code specialist
       let implementationPlan = "";
 
       if (!isRefinement) {
@@ -357,7 +361,7 @@ Antworte NUR mit dem Plan — kompakt, präzise, max. 300 Wörter.`,
 
         try {
           const planStream = await aiClient.chat.completions.create({
-            model,
+            model: planModel,
             max_tokens: 800,
             temperature: 0.3,
             messages: planningMessages as Parameters<typeof aiClient.chat.completions.create>[0]["messages"],
@@ -367,13 +371,14 @@ Antworte NUR mit dem Plan — kompakt, präzise, max. 300 Wörter.`,
             const delta = chunk.choices[0]?.delta?.content;
             if (delta) implementationPlan += delta;
           }
+          log.info({ provider, planModel, genModel }, "Planning step completed");
         } catch {
           // Planning step failed — continue without plan (still better than nothing)
           implementationPlan = "";
         }
       }
 
-      // ── STEP 2: Code generation ───────────────────────────────────────────────
+      // ── STEP 2: Code generation (uses specialized codeModel) ─────────────────
       const codeSystemPrompt = isRefinement
         ? `Du bist ein Elite-Webentwickler. Du hast bereits eine vollständige HTML-App generiert. Verfeinere sie präzise anhand der Nutzeranweisung.
 
@@ -423,7 +428,7 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
       let fullResponse = "";
 
       const stream = await aiClient.chat.completions.create({
-        model,
+        model: genModel,
         max_tokens: 16000,
         temperature: 0.2,
         messages: codeMessages as Parameters<typeof aiClient.chat.completions.create>[0]["messages"],

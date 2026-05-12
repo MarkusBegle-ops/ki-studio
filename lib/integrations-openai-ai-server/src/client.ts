@@ -5,16 +5,21 @@ export interface UserApiKeys {
   groqApiKey?: string | null;
   geminiApiKey?: string | null;
   openrouterApiKey?: string | null;
+  mistralApiKey?: string | null;
 }
 
 export interface AIClient {
   client: OpenAI;
   textModel: string;
   visionModel: string;
-  provider: "openrouter" | "groq" | "gemini" | "openai" | "pollinations";
+  /** Specialized model for code generation — may differ from textModel */
+  codeModel: string;
+  provider: "openrouter" | "groq" | "gemini" | "openai" | "pollinations" | "mistral";
 }
 
 export function getAIClient(keys: UserApiKeys): AIClient {
+  // Priority: OpenRouter → Groq → Gemini → OpenAI → Mistral → Pollinations (free fallback)
+
   if (keys.openrouterApiKey) {
     return {
       client: new OpenAI({
@@ -27,6 +32,7 @@ export function getAIClient(keys: UserApiKeys): AIClient {
       }),
       textModel: "google/gemini-2.0-flash-exp:free",
       visionModel: "google/gemini-2.0-flash-exp:free",
+      codeModel: "google/gemini-2.0-flash-exp:free",
       provider: "openrouter",
     };
   }
@@ -39,6 +45,7 @@ export function getAIClient(keys: UserApiKeys): AIClient {
       }),
       textModel: "llama-3.3-70b-versatile",
       visionModel: "llama-3.2-90b-vision-preview",
+      codeModel: "llama-3.3-70b-versatile",
       provider: "groq",
     };
   }
@@ -51,6 +58,7 @@ export function getAIClient(keys: UserApiKeys): AIClient {
       }),
       textModel: "gemini-2.0-flash",
       visionModel: "gemini-2.0-flash",
+      codeModel: "gemini-2.0-flash",
       provider: "gemini",
     };
   }
@@ -60,12 +68,28 @@ export function getAIClient(keys: UserApiKeys): AIClient {
       client: new OpenAI({ apiKey: keys.openaiApiKey }),
       textModel: "gpt-4o",
       visionModel: "gpt-4o",
+      codeModel: "gpt-4o",
       provider: "openai",
     };
   }
 
+  if (keys.mistralApiKey) {
+    return {
+      client: new OpenAI({
+        apiKey: keys.mistralApiKey,
+        baseURL: "https://api.mistral.ai/v1",
+      }),
+      // codestral-latest is Mistral's dedicated code model — best for HTML/JS/CSS generation
+      textModel: "mistral-large-latest",
+      visionModel: "mistral-large-latest",
+      codeModel: "codestral-latest",
+      provider: "mistral",
+    };
+  }
+
   // Pollinations AI — kein API-Key nötig, kostenlos
-  // openai = GPT-4o equivalent (kostenlos!), qwen-coder = Qwen 2.5 Coder 32B (beste für Code)
+  // openai = GPT-4o equivalent (Planung & Review)
+  // qwen-coder = Qwen 2.5 Coder 32B (speziell für Code — deutlich besser!)
   return {
     client: new OpenAI({
       apiKey: "pollinations",
@@ -73,6 +97,7 @@ export function getAIClient(keys: UserApiKeys): AIClient {
     }),
     textModel: "openai",
     visionModel: "openai",
+    codeModel: "qwen-coder",
     provider: "pollinations",
   };
 }

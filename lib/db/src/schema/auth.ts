@@ -22,6 +22,7 @@ export const usersTable = pgTable("users", {
   groqApiKey: varchar("groq_api_key"),
   geminiApiKey: varchar("gemini_api_key"),
   openrouterApiKey: varchar("openrouter_api_key"),
+  mistralApiKey: varchar("mistral_api_key"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
