@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, count, isNotNull, and } from "drizzle-orm";
 import { db, projectsTable, conversations as conversationsTable, messages as messagesTable, usersTable } from "@workspace/db";
-import { getAIClient } from "@workspace/integrations-openai-ai-server";
+import { getAIClient, getSupportClient } from "@workspace/integrations-openai-ai-server";
 import {
   CreateProjectBody,
   GetProjectParams,
@@ -464,6 +464,66 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
       }
 
       htmlCode = htmlCode.trim();
+
+      // ── STEP 3: Support-KI Review (immer aktiv, kostenlos via Pollinations) ──
+      // Wenn der primäre Provider NICHT Pollinations ist, nutze Pollinations als
+      // zweite Meinung — findet Bugs, ergänzt fehlende Details, poliert die Qualität.
+      if (provider !== "pollinations" && htmlCode.length > 200) {
+        try {
+          const { client: supportClient, codeReviewModel } = getSupportClient();
+          let reviewedResponse = "";
+
+          const reviewStream = await supportClient.chat.completions.create({
+            model: codeReviewModel,
+            max_tokens: 16000,
+            temperature: 0.15,
+            stream: true,
+            messages: [
+              {
+                role: "system",
+                content: `Du bist ein Elite-Code-Reviewer für Web-Apps. Du erhältst eine HTML-App und verbesserst sie.
+
+DEINE AUFGABE:
+- Finde und korrigiere alle Bugs, JavaScript-Fehler und CSS-Probleme
+- Stelle sicher dass alle Funktionen vollständig implementiert sind (keine TODOs, keine Platzhalter)
+- Verbessere das Design, die Animationen und Hover-Effekte wo möglich
+- Füge fehlende Beispieldaten oder Inhalte hinzu
+- Optimiere die Responsivität für Mobile
+
+WICHTIG: Ändere NICHT den grundlegenden Zweck oder das Design — verbessere nur die Ausführung.
+
+OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen.`,
+              },
+              {
+                role: "user",
+                content: `Überprüfe und verbessere diese HTML-App:\n\n${htmlCode.slice(0, 55000)}`,
+              },
+            ],
+          });
+
+          for await (const chunk of reviewStream) {
+            const delta = chunk.choices[0]?.delta?.content;
+            if (delta) reviewedResponse += delta;
+          }
+
+          // Extract HTML from review response
+          let reviewedHtml = reviewedResponse.trim();
+          const reviewBlockMatch = reviewedHtml.match(/```(?:html)?\s*\n?([\s\S]*?)\n?```/is);
+          if (reviewBlockMatch?.[1]) reviewedHtml = reviewBlockMatch[1].trim();
+          const reviewDoctypeIdx = reviewedHtml.toLowerCase().indexOf("<!doctype html>");
+          if (reviewDoctypeIdx > 0) reviewedHtml = reviewedHtml.slice(reviewDoctypeIdx);
+          reviewedHtml = reviewedHtml.trim();
+
+          // Only use the review if it returned valid HTML that's not empty
+          if (reviewedHtml.length > 500 && reviewedHtml.toLowerCase().includes("</html>")) {
+            htmlCode = reviewedHtml;
+            log.info({ codeReviewModel }, "Support-KI Review completed — using improved version");
+          }
+        } catch (reviewErr) {
+          // Review failed — use original code, no problem
+          log.warn({ err: reviewErr }, "Support-KI Review skipped (error)");
+        }
+      }
 
       await db.insert(messagesTable).values({
         conversationId,

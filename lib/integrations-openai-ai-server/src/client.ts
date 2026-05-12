@@ -102,6 +102,23 @@ export function getAIClient(keys: UserApiKeys): AIClient {
   };
 }
 
+/**
+ * Returns a Pollinations client that is ALWAYS available (no API key needed).
+ * Used as a support/review AI regardless of which primary provider is active.
+ * reviewModel = openai (GPT-4o equiv) — best reasoning for catching bugs
+ * codeReviewModel = qwen-coder — specialized for reading and fixing code
+ */
+export function getSupportClient(): { client: OpenAI; reviewModel: string; codeReviewModel: string } {
+  return {
+    client: new OpenAI({
+      apiKey: "pollinations",
+      baseURL: "https://text.pollinations.ai/openai",
+    }),
+    reviewModel: "openai",
+    codeReviewModel: "qwen-coder",
+  };
+}
+
 export function getOpenAIClient(apiKey?: string | null): OpenAI {
   const key = apiKey ?? process.env.OPENAI_API_KEY;
   if (!key) {
