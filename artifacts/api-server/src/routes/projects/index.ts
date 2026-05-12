@@ -525,6 +525,23 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
         }
       }
 
+      // Validate that we actually have HTML — don't overwrite previous htmlCode with empty/invalid content
+      const isValidHtml = htmlCode.length > 100 && (
+        htmlCode.toLowerCase().includes("<!doctype html>") ||
+        htmlCode.toLowerCase().includes("<html")
+      );
+
+      log.info({ projectId, provider, htmlLength: htmlCode.length, isValidHtml }, "Saving generated code");
+
+      if (!isValidHtml) {
+        log.warn({ projectId, provider, htmlLength: htmlCode.length, preview: htmlCode.slice(0, 200) }, "HTML extraction failed — keeping previous htmlCode");
+        await db
+          .update(projectsTable)
+          .set({ generationStatus: "error", generationError: "KI hat keinen gültigen HTML-Code zurückgegeben. Bitte erneut versuchen.", updatedAt: new Date() })
+          .where(eq(projectsTable.id, projectId));
+        return;
+      }
+
       await db.insert(messagesTable).values({
         conversationId,
         role: "assistant",

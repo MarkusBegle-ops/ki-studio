@@ -72,6 +72,8 @@ export default function ProjectEditor() {
     const prev = prevStatusRef.current;
     if (prev === "generating" && generationStatus === "done") {
       setIframeKey((k) => k + 1);
+      // Force-refetch project to get fresh htmlCode
+      queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(id) });
       const convId = project?.conversationId;
       if (convId) {
         queryClient.invalidateQueries({ queryKey: getListAnthropicMessagesQueryKey(convId) });
@@ -79,10 +81,10 @@ export default function ProjectEditor() {
     }
     if (prev === "generating" && generationStatus === "error") {
       const errMsg = (project as unknown as { generationError?: string } | undefined)?.generationError;
-      toast({ title: "Fehler", description: errMsg ?? "Code konnte nicht generiert werden.", variant: "destructive" });
+      toast({ title: "Fehler bei der Generierung", description: errMsg ?? "Code konnte nicht generiert werden.", variant: "destructive" });
     }
     prevStatusRef.current = generationStatus;
-  }, [generationStatus, project, queryClient, toast]);
+  }, [generationStatus, project, queryClient, toast, id]);
 
   const conversationId = project?.conversationId ?? 0;
   const { data: messages, isLoading: isMessagesLoading } = useListAnthropicMessages(conversationId, {
@@ -641,17 +643,7 @@ export default function ProjectEditor() {
 
             {/* Preview content */}
             <div className="flex-1 relative overflow-hidden">
-              {!project.htmlCode && !isGenerating ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
-                  <div className="w-16 h-16 rounded-2xl bg-primary/5 border border-primary/10 flex items-center justify-center mb-5">
-                    <Sparkles className="w-7 h-7 text-primary/30" />
-                  </div>
-                  <p className="text-base font-medium text-foreground/50 mb-2">Bereit für deine Anweisungen</p>
-                  <p className="text-sm text-muted-foreground/40 max-w-xs leading-relaxed">
-                    Schreibe links was du bauen möchtest — oder lade ein Screenshot hoch.
-                  </p>
-                </div>
-              ) : isGenerating && !project.htmlCode ? (
+              {isGenerating ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
                   <div className="w-16 h-16 rounded-2xl bg-primary/5 border border-primary/10 flex items-center justify-center mb-5">
                     <Loader2 className="w-7 h-7 text-primary/40 animate-spin" />
@@ -659,6 +651,30 @@ export default function ProjectEditor() {
                   <p className="text-base font-medium text-foreground/50 mb-2">KI generiert deinen Code…</p>
                   <p className="text-sm text-muted-foreground/40 max-w-xs leading-relaxed">
                     Du kannst den Tab schließen — die Generierung läuft im Hintergrund weiter.
+                  </p>
+                </div>
+              ) : generationStatus === "error" && !project.htmlCode ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
+                  <div className="w-16 h-16 rounded-2xl bg-destructive/5 border border-destructive/20 flex items-center justify-center mb-5">
+                    <AlertCircle className="w-7 h-7 text-destructive/50" />
+                  </div>
+                  <p className="text-base font-medium text-foreground/50 mb-2">Generierung fehlgeschlagen</p>
+                  <p className="text-sm text-muted-foreground/40 max-w-xs leading-relaxed mb-4">
+                    {(project as unknown as { generationError?: string })?.generationError ?? "Bitte erneut versuchen."}
+                  </p>
+                  <Button size="sm" onClick={() => prompt && handleGenerate()} className="gap-1.5 text-xs">
+                    <Sparkles className="w-3 h-3" />
+                    Nochmals generieren
+                  </Button>
+                </div>
+              ) : !project.htmlCode ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
+                  <div className="w-16 h-16 rounded-2xl bg-primary/5 border border-primary/10 flex items-center justify-center mb-5">
+                    <Sparkles className="w-7 h-7 text-primary/30" />
+                  </div>
+                  <p className="text-base font-medium text-foreground/50 mb-2">Bereit für deine Anweisungen</p>
+                  <p className="text-sm text-muted-foreground/40 max-w-xs leading-relaxed">
+                    Schreibe links was du bauen möchtest — oder lade ein Screenshot hoch.
                   </p>
                 </div>
               ) : (
