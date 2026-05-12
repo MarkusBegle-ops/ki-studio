@@ -665,10 +665,10 @@ export default function ProjectEditor() {
                 <div className="absolute inset-3 bg-white rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/5">
                   <iframe
                     key={iframeKey}
-                    src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/projects/${id}/preview`}
+                    srcDoc={project.htmlCode ?? ""}
                     className="w-full h-full border-none"
                     title="Live Vorschau"
-                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                    sandbox="allow-scripts allow-forms allow-popups allow-modals"
                   />
                   {isGenerating && (
                     <div className="absolute inset-0 bg-black/20 backdrop-blur-[3px] flex items-center justify-center">
