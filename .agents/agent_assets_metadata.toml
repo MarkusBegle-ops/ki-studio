@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "vQcjju0JUcUqW6h6x2xRK"
+uri = "file://ki-studio-source.zip"
+type = "unspecified"
+title = "KI Studio – vollständiger Quellcode"
