@@ -10,6 +10,7 @@ import ProjectEditor from "@/pages/project-editor";
 import Settings from "@/pages/settings";
 import ForgotPassword from "@/pages/forgot-password";
 import ResetPassword from "@/pages/reset-password";
+import Templates from "@/pages/templates";
 import { Sparkles, Zap, Eye, Globe, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/vorlagen" component={Templates} />
       <Route path="/projekt/neu" component={NewProject} />
       <Route path="/projekt/:id" component={ProjectEditor} />
       <Route path="/einstellungen" component={Settings} />

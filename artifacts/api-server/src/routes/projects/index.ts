@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, count, isNotNull, and } from "drizzle-orm";
-import { db, projectsTable, conversations as conversationsTable, messages as messagesTable, usersTable } from "@workspace/db";
+import { eq, desc, count, isNotNull, and, sql } from "drizzle-orm";
+import { db, projectsTable, conversations as conversationsTable, messages as messagesTable, usersTable, projectVersionsTable } from "@workspace/db";
 import { getAIClient, getSupportClient } from "@workspace/integrations-openai-ai-server";
 import {
   CreateProjectBody,
@@ -595,6 +595,22 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
         .set({ htmlCode, generationStatus: "done", updatedAt: new Date() })
         .where(eq(projectsTable.id, projectId));
 
+      // Save version snapshot for history
+      try {
+        const [maxRow] = await db
+          .select({ maxVer: sql<number>`COALESCE(MAX(${projectVersionsTable.versionNumber}), 0)` })
+          .from(projectVersionsTable)
+          .where(eq(projectVersionsTable.projectId, projectId));
+        await db.insert(projectVersionsTable).values({
+          projectId,
+          versionNumber: (maxRow?.maxVer ?? 0) + 1,
+          htmlCode,
+          prompt,
+        });
+      } catch (vErr) {
+        log.warn({ err: vErr }, "Version snapshot save failed (non-critical)");
+      }
+
     } catch (err) {
       log.error({ err }, "Background generation error");
       await db
@@ -632,6 +648,49 @@ router.post("/projects/:id/publish", async (req, res): Promise<void> => {
     .update(projectsTable)
     .set({ isPublished: true, publishedUrl, updatedAt: new Date() })
     .where(eq(projectsTable.id, project.id))
+    .returning();
+
+  res.json(updated);
+});
+
+router.get("/projects/:id/versions", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) { res.status(401).json({ error: "Nicht angemeldet" }); return; }
+  const projectId = parseInt(req.params.id, 10);
+  if (isNaN(projectId)) { res.status(400).json({ error: "Ungültige ID" }); return; }
+
+  const [project] = await db.select({ id: projectsTable.id }).from(projectsTable)
+    .where(and(eq(projectsTable.id, projectId), eq(projectsTable.userId, req.user.id)));
+  if (!project) { res.status(404).json({ error: "Projekt nicht gefunden" }); return; }
+
+  const versions = await db.select({
+    id: projectVersionsTable.id,
+    versionNumber: projectVersionsTable.versionNumber,
+    prompt: projectVersionsTable.prompt,
+    createdAt: projectVersionsTable.createdAt,
+  }).from(projectVersionsTable)
+    .where(eq(projectVersionsTable.projectId, projectId))
+    .orderBy(desc(projectVersionsTable.versionNumber));
+
+  res.json(versions);
+});
+
+router.post("/projects/:id/versions/:versionId/restore", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) { res.status(401).json({ error: "Nicht angemeldet" }); return; }
+  const projectId = parseInt(req.params.id, 10);
+  const versionId = parseInt(req.params.versionId, 10);
+  if (isNaN(projectId) || isNaN(versionId)) { res.status(400).json({ error: "Ungültige ID" }); return; }
+
+  const [project] = await db.select({ id: projectsTable.id }).from(projectsTable)
+    .where(and(eq(projectsTable.id, projectId), eq(projectsTable.userId, req.user.id)));
+  if (!project) { res.status(404).json({ error: "Projekt nicht gefunden" }); return; }
+
+  const [version] = await db.select().from(projectVersionsTable)
+    .where(and(eq(projectVersionsTable.id, versionId), eq(projectVersionsTable.projectId, projectId)));
+  if (!version) { res.status(404).json({ error: "Version nicht gefunden" }); return; }
+
+  const [updated] = await db.update(projectsTable)
+    .set({ htmlCode: version.htmlCode, generationStatus: "done", updatedAt: new Date() })
+    .where(eq(projectsTable.id, projectId))
     .returning();
 
   res.json(updated);

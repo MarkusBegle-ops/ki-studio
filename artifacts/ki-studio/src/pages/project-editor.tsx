@@ -24,8 +24,17 @@ import {
 import {
   Loader2, ArrowLeft, Send, Globe, Copy, Check,
   AlertCircle, Download, ExternalLink, User, Bot, Sparkles,
-  Link as LinkIcon, Paperclip, X, Bug, Wrench,
+  Link as LinkIcon, Paperclip, X, Bug, Wrench, History,
 } from "lucide-react";
+import { format } from "date-fns";
+import { de } from "date-fns/locale";
+
+interface ProjectVersion {
+  id: number;
+  versionNumber: number;
+  prompt: string | null;
+  createdAt: string;
+}
 
 /** Inject an error-capture script into generated HTML so JS errors are relayed via postMessage */
 function injectErrorCapture(html: string): string {
@@ -64,6 +73,10 @@ export default function ProjectEditor() {
   const [autoGenTriggered, setAutoGenTriggered] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [iframeErrors, setIframeErrors] = useState<{ id: string; message: string }[]>([]);
+  const [showVersions, setShowVersions] = useState(false);
+  const [versions, setVersions] = useState<ProjectVersion[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [restoringVersion, setRestoringVersion] = useState<number | null>(null);
   const prevStatusRef = useRef<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -74,6 +87,39 @@ export default function ProjectEditor() {
   const attachedImagesRef = useRef<AttachedImage[]>([]);
   useEffect(() => { attachedImagesRef.current = attachedImages; }, [attachedImages]);
   useEffect(() => () => { attachedImagesRef.current.forEach(img => URL.revokeObjectURL(img.preview)); }, []);
+
+  // Fetch version history when panel opens
+  useEffect(() => {
+    if (!showVersions || !id) return;
+    const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+    setVersionsLoading(true);
+    fetch(`${base}/api/projects/${id}/versions`, { credentials: "include" })
+      .then(r => r.json())
+      .then(data => setVersions(data as ProjectVersion[]))
+      .catch(() => {})
+      .finally(() => setVersionsLoading(false));
+  }, [showVersions, id]);
+
+  async function handleRestoreVersion(versionId: number) {
+    setRestoringVersion(versionId);
+    const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+    try {
+      const res = await fetch(`${base}/api/projects/${id}/versions/${versionId}/restore`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        await queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(id) });
+        setIframeKey(k => k + 1);
+        setShowVersions(false);
+        toast({ title: "Version geladen", description: "Die gespeicherte Version wurde wiederhergestellt." });
+      }
+    } catch {
+      toast({ title: "Fehler beim Laden der Version", variant: "destructive" });
+    } finally {
+      setRestoringVersion(null);
+    }
+  }
 
   const { data: project, isLoading: isProjectLoading } = useGetProject(id, {
     query: {
@@ -202,7 +248,6 @@ export default function ProjectEditor() {
       !isProjectLoading &&
       !project.htmlCode &&
       !project.conversationId &&
-      project.sourceUrl &&
       project.description &&
       !isGenerating
     ) {
@@ -402,6 +447,20 @@ export default function ProjectEditor() {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>KI analysiert deinen Code und behebt alle Fehler automatisch</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowVersions(v => !v)}
+                      className={`h-8 w-8 ${showVersions ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"}`}
+                      data-testid="button-version-history"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Versionsverlauf anzeigen</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -722,7 +781,7 @@ export default function ProjectEditor() {
           </div>
 
           {/* Right: Preview */}
-          <div className="flex-1 flex flex-col bg-[#0a0c12] overflow-hidden">
+          <div className="flex-1 flex flex-col bg-[#0a0c12] overflow-hidden relative">
             {/* Browser chrome */}
             <div className="h-9 shrink-0 bg-card/60 border-b border-border/40 flex items-center px-3 gap-3">
               <div className="flex gap-1.5">
@@ -807,6 +866,68 @@ export default function ProjectEditor() {
                 </div>
               )}
             </div>
+
+            {/* Version History Overlay */}
+            {showVersions && (
+              <div className="absolute inset-0 z-20 bg-background/97 backdrop-blur-sm flex flex-col">
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-border/40 shrink-0">
+                  <History className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-semibold">Versionsverlauf</span>
+                  {!versionsLoading && (
+                    <Badge variant="secondary" className="text-xs ml-0.5 h-4 px-1.5">{versions.length}</Badge>
+                  )}
+                  <div className="flex-1" />
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => setShowVersions(false)}>
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                  {versionsLoading ? (
+                    <div className="flex justify-center py-12">
+                      <Loader2 className="w-5 h-5 animate-spin text-primary/60" />
+                    </div>
+                  ) : versions.length === 0 ? (
+                    <div className="text-center py-12 space-y-2">
+                      <History className="w-8 h-8 text-muted-foreground/20 mx-auto" />
+                      <p className="text-sm text-muted-foreground/50">Noch keine gespeicherten Versionen.</p>
+                      <p className="text-xs text-muted-foreground/35">Jede Generierung speichert eine neue Version.</p>
+                    </div>
+                  ) : (
+                    versions.map(v => (
+                      <div key={v.id} className="rounded-xl border border-border/40 bg-card/40 p-3 space-y-2.5 hover:border-border/60 transition-colors">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-5 h-5 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center">
+                              <span className="text-[9px] font-bold text-primary">{v.versionNumber}</span>
+                            </div>
+                            <span className="text-xs font-semibold">Version {v.versionNumber}</span>
+                          </div>
+                          <span className="text-[10px] text-muted-foreground/50">
+                            {format(new Date(v.createdAt), "dd. MMM, HH:mm", { locale: de })}
+                          </span>
+                        </div>
+                        {v.prompt && (
+                          <p className="text-xs text-muted-foreground/60 line-clamp-2 leading-relaxed pl-7">{v.prompt}</p>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs w-full gap-1.5 border-border/50"
+                          onClick={() => handleRestoreVersion(v.id)}
+                          disabled={restoringVersion === v.id}
+                        >
+                          {restoringVersion === v.id ? (
+                            <><Loader2 className="w-3 h-3 animate-spin" />Wird geladen…</>
+                          ) : (
+                            "Diese Version laden"
+                          )}
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
