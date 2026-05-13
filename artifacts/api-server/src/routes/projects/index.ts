@@ -542,10 +542,15 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
         return;
       }
 
+      // Extract only the analysis/explanation text before the HTML — don't store the full HTML in messages
+      // (HTML is already saved in projectsTable.htmlCode)
+      const htmlStartIdx = fullResponse.search(/<!doctype html>/i);
+      const analysisText = htmlStartIdx > 0 ? fullResponse.slice(0, htmlStartIdx).trim() : "";
+
       await db.insert(messagesTable).values({
         conversationId,
         role: "assistant",
-        content: fullResponse,
+        content: analysisText,
       });
 
       await db

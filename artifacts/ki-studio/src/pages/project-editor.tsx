@@ -18,7 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Loader2, ArrowLeft, Send, Globe, Copy, Check,
   AlertCircle, Download, ExternalLink, User, Bot, Sparkles,
-  Link as LinkIcon, Paperclip, X, Image as ImageIcon,
+  Link as LinkIcon, Paperclip, X, Bug,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -210,6 +210,12 @@ export default function ProjectEditor() {
     });
   };
 
+  const handleBugFix = useCallback(() => {
+    const bugFixPrompt = `Analysiere den vollständigen Code dieser App gründlich. Schreibe zuerst in 4-8 kurzen deutschen Sätzen welche Probleme du gefunden hast (Bugs, fehlende Funktionen, Design-Probleme). Dann erstelle sofort die komplett korrigierte und verbesserte Version. Starte deine Antwort mit "Ich habe folgende Probleme gefunden:" — dann direkt die Aufzählung — dann den HTML-Code.`;
+    setIsRefinement(true);
+    handleGenerate(bugFixPrompt, []);
+  }, [handleGenerate, setIsRefinement]);
+
   const handlePublish = () => {
     publishProject.mutate({ id }, {
       onSuccess: (data) => {
@@ -330,6 +336,22 @@ export default function ProjectEditor() {
 
             {project.htmlCode && (
               <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleBugFix}
+                      disabled={isGenerating}
+                      className="h-8 gap-1.5 text-xs text-amber-400/80 hover:text-amber-400 hover:bg-amber-400/10"
+                      data-testid="button-bug-fix"
+                    >
+                      <Bug className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Fehler beheben</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>KI analysiert deinen Code und behebt alle Fehler automatisch</TooltipContent>
+                </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button variant="ghost" size="icon" onClick={handleDownload} className="h-8 w-8 text-muted-foreground hover:text-foreground" data-testid="button-download">
@@ -486,17 +508,23 @@ export default function ProjectEditor() {
                     }`}>
                       {msg.role === "user" ? (
                         <p className="whitespace-pre-wrap">{msg.content}</p>
-                      ) : msg.content.startsWith("__HTML_VERSION_") ? (
-                        <span className="text-primary/70 font-medium flex items-center gap-1.5">
-                          <Sparkles className="w-3 h-3" />
-                          Version {msg.content.replace("__HTML_VERSION_", "").replace("__", "")} generiert ✓
-                        </span>
-                      ) : (
-                        <span className="text-primary/70 font-medium flex items-center gap-1.5">
-                          <Sparkles className="w-3 h-3" />
-                          Code generiert ✓
-                        </span>
-                      )}
+                      ) : (() => {
+                        // Parse new format: may contain analysis text + __HTML_VERSION_N__ tag
+                        const versionMatch = msg.content.match(/__HTML_VERSION_(\d+)__/);
+                        const versionNum = versionMatch?.[1];
+                        const analysisText = msg.content.replace(/__HTML_VERSION_\d+__/, "").trim();
+                        return (
+                          <div className="space-y-2">
+                            {analysisText && (
+                              <p className="whitespace-pre-wrap text-foreground/75 leading-relaxed">{analysisText}</p>
+                            )}
+                            <span className="text-primary/70 font-medium flex items-center gap-1.5">
+                              <Sparkles className="w-3 h-3" />
+                              {versionNum ? `Version ${versionNum} generiert ✓` : "Code generiert ✓"}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))

@@ -30,9 +30,12 @@ export function getAIClient(keys: UserApiKeys): AIClient {
           "X-Title": "KI Studio",
         },
       }),
-      textModel: "google/gemini-2.0-flash-exp:free",
-      visionModel: "google/gemini-2.0-flash-exp:free",
-      codeModel: "google/gemini-2.0-flash-exp:free",
+      // qwen3-coder: dedicated code model, 262K context — best free option for HTML generation
+      // nemotron-nano-12b-v2-vl: vision-language model for image uploads
+      // llama-3.3-70b: reliable general model for planning
+      textModel: "meta-llama/llama-3.3-70b-instruct:free",
+      visionModel: "nvidia/nemotron-nano-12b-v2-vl:free",
+      codeModel: "qwen/qwen3-coder:free",
       provider: "openrouter",
     };
   }

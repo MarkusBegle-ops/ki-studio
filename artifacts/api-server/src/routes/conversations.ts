@@ -38,16 +38,31 @@ router.get("/anthropic/conversations/:id/messages", async (req, res): Promise<vo
     .where(eq(messagesTable.conversationId, convId))
     .orderBy(messagesTable.createdAt);
 
-  // For assistant messages, don't send the full HTML — just a placeholder
-  const sanitized = msgs.map((m, idx) => ({
-    id: m.id,
-    conversationId: m.conversationId,
-    role: m.role,
-    content: m.role === "assistant"
-      ? `__HTML_VERSION_${Math.ceil((idx + 1) / 2)}__`
-      : m.content,
-    createdAt: m.createdAt,
-  }));
+  // For assistant messages: if the content contains HTML (old format), replace with placeholder.
+  // If content is just analysis text (new format) or empty, pass it through.
+  let versionCounter = 0;
+  const sanitized = msgs.map((m) => {
+    if (m.role !== "assistant") return { id: m.id, conversationId: m.conversationId, role: m.role, content: m.content, createdAt: m.createdAt };
+
+    versionCounter++;
+    const hasHtml = m.content.toLowerCase().includes("<!doctype html>") || m.content.toLowerCase().includes("<html");
+
+    if (hasHtml) {
+      // Old format: full HTML stored — replace with version placeholder only
+      return { id: m.id, conversationId: m.conversationId, role: m.role, content: `__HTML_VERSION_${versionCounter}__`, createdAt: m.createdAt };
+    }
+
+    // New format: analysis text stored (or empty) — pass through + append version tag
+    const analysisText = m.content.trim();
+    const versionTag = `__HTML_VERSION_${versionCounter}__`;
+    return {
+      id: m.id,
+      conversationId: m.conversationId,
+      role: m.role,
+      content: analysisText ? `${analysisText}\n${versionTag}` : versionTag,
+      createdAt: m.createdAt,
+    };
+  });
 
   res.json(sanitized);
 });
