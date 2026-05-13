@@ -89,12 +89,16 @@ async function getUserKeys(userId: string) {
     groqApiKey: usersTable.groqApiKey,
     geminiApiKey: usersTable.geminiApiKey,
     openrouterApiKey: usersTable.openrouterApiKey,
+    mistralApiKey: usersTable.mistralApiKey,
+    nvidiaApiKey: usersTable.nvidiaApiKey,
   }).from(usersTable).where(eq(usersTable.id, userId));
   return {
     openaiApiKey: user?.openaiApiKey ?? null,
     groqApiKey: user?.groqApiKey ?? null,
     geminiApiKey: user?.geminiApiKey ?? null,
     openrouterApiKey: user?.openrouterApiKey ?? null,
+    mistralApiKey: user?.mistralApiKey ?? null,
+    nvidiaApiKey: user?.nvidiaApiKey ?? null,
   };
 }
 

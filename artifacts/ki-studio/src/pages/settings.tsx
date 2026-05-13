@@ -15,6 +15,7 @@ interface SettingsData {
   gemini: ProviderStatus;
   openrouter: ProviderStatus;
   mistral: ProviderStatus;
+  nvidia: ProviderStatus;
 }
 
 interface ProviderConfig {
@@ -75,6 +76,18 @@ const PROVIDERS: ProviderConfig[] = [
     keyUrlLabel: "platform.openai.com/api-keys",
     description: "GPT-4o — höchste Qualität, aber kostenpflichtig (sehr günstig pro Nutzung).",
     free: false,
+  },
+  {
+    id: "nvidia",
+    name: "NVIDIA NIM",
+    badge: "Kostenlos",
+    badgeColor: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
+    placeholder: "nvapi-…",
+    keyUrl: "https://build.nvidia.com/",
+    keyUrlLabel: "build.nvidia.com",
+    description: "NVIDIA Nemotron & Qwen3-Coder 235B — leistungsstarke Modelle direkt auf NVIDIA-Hardware.",
+    free: true,
+    note: "Kostenloser API-Zugang über build.nvidia.com — kein Kreditkarte nötig.",
   },
   {
     id: "mistral",
@@ -205,7 +218,7 @@ export default function Settings() {
     fetch("/api/settings", { credentials: "include", cache: "no-store" })
       .then(r => r.json() as Promise<SettingsData>)
       .then(setSettings)
-      .catch(() => setSettings({ openai: { hasKey: false, preview: null }, groq: { hasKey: false, preview: null }, gemini: { hasKey: false, preview: null }, openrouter: { hasKey: false, preview: null }, mistral: { hasKey: false, preview: null } }))
+      .catch(() => setSettings({ openai: { hasKey: false, preview: null }, groq: { hasKey: false, preview: null }, gemini: { hasKey: false, preview: null }, openrouter: { hasKey: false, preview: null }, mistral: { hasKey: false, preview: null }, nvidia: { hasKey: false, preview: null } }))
       .finally(() => setIsLoading(false));
   }, []);
 

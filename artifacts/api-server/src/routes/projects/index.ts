@@ -276,6 +276,7 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
         geminiApiKey: usersTable.geminiApiKey,
         openrouterApiKey: usersTable.openrouterApiKey,
         mistralApiKey: usersTable.mistralApiKey,
+        nvidiaApiKey: usersTable.nvidiaApiKey,
       }).from(usersTable).where(eq(usersTable.id, req.user.id));
       const userKeys = {
         openaiApiKey: userRow?.openaiApiKey ?? null,
@@ -283,6 +284,7 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
         geminiApiKey: userRow?.geminiApiKey ?? null,
         openrouterApiKey: userRow?.openrouterApiKey ?? null,
         mistralApiKey: userRow?.mistralApiKey ?? null,
+        nvidiaApiKey: userRow?.nvidiaApiKey ?? null,
       };
       const { client: aiClient, textModel, visionModel, codeModel, provider } = getAIClient(userKeys);
 

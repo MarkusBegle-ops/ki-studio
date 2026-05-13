@@ -155,6 +155,7 @@ router.get("/settings", async (req: Request, res: Response) => {
     gemini:     { hasKey: !!(user?.geminiApiKey),      preview: keyPreview(user?.geminiApiKey, "AIza") },
     openrouter: { hasKey: !!(user?.openrouterApiKey),  preview: keyPreview(user?.openrouterApiKey, "sk-or-") },
     mistral:    { hasKey: !!(user?.mistralApiKey),     preview: keyPreview(user?.mistralApiKey) },
+    nvidia:     { hasKey: !!(user?.nvidiaApiKey),      preview: keyPreview(user?.nvidiaApiKey, "nvapi-") },
   });
 });
 
@@ -169,6 +170,7 @@ router.post("/settings/provider-key", async (req: Request, res: Response) => {
     gemini:     "geminiApiKey",
     openrouter: "openrouterApiKey",
     mistral:    "mistralApiKey",
+    nvidia:     "nvidiaApiKey",
   };
 
   if (!columnMap[provider]) {

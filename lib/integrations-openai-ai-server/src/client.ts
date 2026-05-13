@@ -6,6 +6,7 @@ export interface UserApiKeys {
   geminiApiKey?: string | null;
   openrouterApiKey?: string | null;
   mistralApiKey?: string | null;
+  nvidiaApiKey?: string | null;
 }
 
 export interface AIClient {
@@ -14,11 +15,11 @@ export interface AIClient {
   visionModel: string;
   /** Specialized model for code generation — may differ from textModel */
   codeModel: string;
-  provider: "openrouter" | "groq" | "gemini" | "openai" | "pollinations" | "mistral";
+  provider: "openrouter" | "nvidia" | "groq" | "gemini" | "openai" | "pollinations" | "mistral";
 }
 
 export function getAIClient(keys: UserApiKeys): AIClient {
-  // Priority: OpenRouter → Groq → Gemini → OpenAI → Mistral → Pollinations (free fallback)
+  // Priority: OpenRouter → NVIDIA → Groq → Gemini → OpenAI → Mistral → Pollinations (free fallback)
 
   if (keys.openrouterApiKey) {
     return {
@@ -37,6 +38,22 @@ export function getAIClient(keys: UserApiKeys): AIClient {
       visionModel: "nvidia/nemotron-nano-12b-v2-vl:free",
       codeModel: "qwen/qwen3-coder:free",
       provider: "openrouter",
+    };
+  }
+
+  if (keys.nvidiaApiKey) {
+    return {
+      client: new OpenAI({
+        apiKey: keys.nvidiaApiKey,
+        baseURL: "https://integrate.api.nvidia.com/v1",
+      }),
+      // nemotron-super: NVIDIA's flagship reasoning model (49B, excellent for complex apps)
+      // llama-3.2-90b-vision: vision-capable for image uploads
+      // qwen3-coder: specialized code model, 235B params
+      textModel: "nvidia/llama-3.3-nemotron-super-49b-v1",
+      visionModel: "nvidia/llama-3.2-90b-vision-instruct",
+      codeModel: "qwen/qwen3-235b-a22b",
+      provider: "nvidia",
     };
   }
 
