@@ -1,8 +1,9 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod/v4";
 import bcrypt from "bcryptjs";
-import { db, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import crypto from "crypto";
+import { db, usersTable, passwordResetTokensTable } from "@workspace/db";
+import { eq, and, gt, isNull } from "drizzle-orm";
 import {
   clearSession,
   getSessionId,
@@ -182,6 +183,92 @@ router.post("/settings/provider-key", async (req: Request, res: Response) => {
     .where(eq(usersTable.id, req.user.id));
 
   res.json({ success: true, hasKey: !!key });
+});
+
+router.post("/auth/forgot-password", async (req: Request, res: Response) => {
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  if (!email) { res.status(400).json({ error: "E-Mail-Adresse fehlt" }); return; }
+
+  const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email));
+
+  if (!user) {
+    res.json({ resetUrl: null, message: "Falls ein Konto mit dieser E-Mail existiert, wurde ein Link erstellt." });
+    return;
+  }
+
+  const token = crypto.randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+  await db.insert(passwordResetTokensTable).values({ userId: user.id, token, expiresAt });
+
+  const origin = `${req.protocol}://${req.get("host")}`;
+  const resetUrl = `${origin}/passwort-zurücksetzen?token=${token}`;
+
+  res.json({ resetUrl });
+});
+
+router.post("/auth/reset-password", async (req: Request, res: Response) => {
+  const NewPasswordBody = z.object({
+    token: z.string().min(1),
+    newPassword: z.string().min(8, "Passwort muss mindestens 8 Zeichen haben"),
+  });
+  const parsed = NewPasswordBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe" });
+    return;
+  }
+
+  const { token, newPassword } = parsed.data;
+  const now = new Date();
+
+  const [row] = await db
+    .select()
+    .from(passwordResetTokensTable)
+    .where(and(eq(passwordResetTokensTable.token, token), gt(passwordResetTokensTable.expiresAt, now), isNull(passwordResetTokensTable.usedAt)));
+
+  if (!row) {
+    res.status(400).json({ error: "Ungültiger oder abgelaufener Reset-Link. Bitte erstelle einen neuen." });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, row.userId));
+  await db.update(passwordResetTokensTable).set({ usedAt: now }).where(eq(passwordResetTokensTable.token, token));
+
+  res.json({ success: true });
+});
+
+router.post("/settings/change-password", async (req: Request, res: Response) => {
+  if (!req.isAuthenticated()) { res.status(401).json({ error: "Nicht angemeldet" }); return; }
+
+  const ChangePasswordBody = z.object({
+    currentPassword: z.string().min(1),
+    newPassword: z.string().min(8, "Neues Passwort muss mindestens 8 Zeichen haben"),
+  });
+  const parsed = ChangePasswordBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe" });
+    return;
+  }
+
+  const { currentPassword, newPassword } = parsed.data;
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user.id));
+  if (!user?.passwordHash) {
+    res.status(400).json({ error: "Konto hat kein Passwort" });
+    return;
+  }
+
+  const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!valid) {
+    res.status(400).json({ error: "Aktuelles Passwort ist falsch" });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, req.user.id));
+
+  res.json({ success: true });
 });
 
 router.get("/logout", async (req: Request, res: Response) => {

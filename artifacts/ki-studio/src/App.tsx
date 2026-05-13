@@ -8,6 +8,8 @@ import Home from "@/pages/home";
 import NewProject from "@/pages/new-project";
 import ProjectEditor from "@/pages/project-editor";
 import Settings from "@/pages/settings";
+import ForgotPassword from "@/pages/forgot-password";
+import ResetPassword from "@/pages/reset-password";
 import { Sparkles, Zap, Eye, Globe, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +26,20 @@ function Router() {
       <Route path="/projekt/:id" component={ProjectEditor} />
       <Route path="/einstellungen" component={Settings} />
       <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function PublicRouter() {
+  return (
+    <Switch>
+      <Route path="/passwort-vergessen" component={ForgotPassword} />
+      <Route path="/passwort-zurücksetzen" component={ResetPassword} />
+      <Route>
+        <AuthGate>
+          <Router />
+        </AuthGate>
+      </Route>
     </Switch>
   );
 }
@@ -150,6 +166,13 @@ function AuthForm({ onSuccess }: { onSuccess: () => void }) {
           </>
         )}
       </p>
+      {mode === "login" && (
+        <p className="text-center text-xs text-muted-foreground">
+          <a href="/passwort-vergessen" className="text-muted-foreground hover:text-primary transition-colors">
+            Passwort vergessen?
+          </a>
+        </p>
+      )}
     </form>
   );
 }
@@ -240,9 +263,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <AuthGate>
-            <Router />
-          </AuthGate>
+          <PublicRouter />
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

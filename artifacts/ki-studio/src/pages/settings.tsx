@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "wouter";
-import { ArrowLeft, Key, CheckCircle2, Trash2, Loader2, ExternalLink, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, Key, CheckCircle2, Trash2, Loader2, ExternalLink, AlertCircle, ChevronDown, ChevronUp, Lock } from "lucide-react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -342,7 +342,109 @@ export default function Settings() {
             Alle API-Keys werden verschlüsselt in deinem Account gespeichert und nie weitergegeben.
           </p>
         </div>
+
+        <ChangePasswordSection />
       </div>
     </AppLayout>
+  );
+}
+
+function ChangePasswordSection() {
+  const { toast } = useToast();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (newPassword.length < 8) { setError("Neues Passwort muss mindestens 8 Zeichen haben."); return; }
+    if (newPassword !== confirmPassword) { setError("Passwörter stimmen nicht überein."); return; }
+
+    setSaving(true);
+    try {
+      const res = await fetch("/api/settings/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await res.json() as { error?: string };
+      if (!res.ok) { setError(data.error ?? "Fehler aufgetreten"); return; }
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      toast({ title: "Passwort geändert", description: "Dein neues Passwort ist ab sofort aktiv." });
+    } catch {
+      setError("Netzwerkfehler — bitte erneut versuchen");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-0.5">Sicherheit</p>
+      <Card>
+        <CardHeader className="pb-3 pt-4 px-4">
+          <div className="flex items-center gap-3">
+            <Lock className="w-4 h-4 text-muted-foreground shrink-0" />
+            <div>
+              <CardTitle className="text-sm font-semibold">Passwort ändern</CardTitle>
+              <CardDescription className="text-xs mt-0.5">Lege ein neues Passwort für deinen Account fest.</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Aktuelles Passwort</label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={e => setCurrentPassword(e.target.value)}
+                required
+                placeholder="Dein aktuelles Passwort"
+                className="w-full h-9 rounded-md border border-border/60 bg-card/60 px-3 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+                autoComplete="current-password"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Neues Passwort</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                required
+                placeholder="Mindestens 8 Zeichen"
+                className="w-full h-9 rounded-md border border-border/60 bg-card/60 px-3 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Passwort bestätigen</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                required
+                placeholder="Nochmals eingeben"
+                className="w-full h-9 rounded-md border border-border/60 bg-card/60 px-3 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+                autoComplete="new-password"
+              />
+            </div>
+            {error && (
+              <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2">{error}</p>
+            )}
+            <Button type="submit" size="sm" className="h-9 gap-2" disabled={saving || !currentPassword || !newPassword || !confirmPassword}>
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+              {saving ? "Wird gespeichert…" : "Passwort ändern"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
