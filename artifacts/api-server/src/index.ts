@@ -1,5 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { db, projectsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +24,15 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  // Reset projects stuck in "generating" from a previous server run (crash/restart mid-generation)
+  db.update(projectsTable)
+    .set({
+      generationStatus: "error",
+      generationError: "Die Generierung wurde durch einen Server-Neustart unterbrochen. Bitte erneut versuchen.",
+      updatedAt: new Date(),
+    })
+    .where(eq(projectsTable.generationStatus, "generating"))
+    .then(() => logger.info("Startup: stuck generating projects reset"))
+    .catch((e) => logger.error({ err: e }, "Startup: failed to reset stuck projects"));
 });

@@ -70,7 +70,11 @@ function AuthForm({ onSuccess }: { onSuccess: () => void }) {
         body: JSON.stringify(body),
       });
 
-      const data = await res.json() as { error?: string };
+      let data: { error?: string } = {};
+      try {
+        const ct = res.headers.get("content-type") ?? "";
+        if (ct.includes("application/json")) data = await res.json() as { error?: string };
+      } catch { /* ignore parse errors */ }
       if (!res.ok) {
         setError(data.error ?? "Unbekannter Fehler");
         return;

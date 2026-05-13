@@ -70,6 +70,11 @@ export default function ProjectEditor() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Track latest images in a ref so the unmount cleanup can revoke all object URLs
+  const attachedImagesRef = useRef<AttachedImage[]>([]);
+  useEffect(() => { attachedImagesRef.current = attachedImages; }, [attachedImages]);
+  useEffect(() => () => { attachedImagesRef.current.forEach(img => URL.revokeObjectURL(img.preview)); }, []);
+
   const { data: project, isLoading: isProjectLoading } = useGetProject(id, {
     query: {
       enabled: !!id,
@@ -167,8 +172,15 @@ export default function ProjectEditor() {
       });
 
       if (!res.ok) {
-        const data = await res.json() as { error?: string };
-        throw new Error(data.error ?? "Fehler bei der Anfrage");
+        let errMsg = "Fehler bei der Anfrage";
+        try {
+          const ct = res.headers.get("content-type") ?? "";
+          if (ct.includes("application/json")) {
+            const data = await res.json() as { error?: string };
+            errMsg = data.error ?? errMsg;
+          }
+        } catch { /* ignore parse errors */ }
+        throw new Error(errMsg);
       }
 
       // Immediately update query cache so UI shows "generating" without waiting for next poll

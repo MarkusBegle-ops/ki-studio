@@ -73,15 +73,23 @@ router.post("/auth/register", async (req: Request, res: Response) => {
     return;
   }
 
-  const sid = await createSession({
-    user: {
-      id: user.id,
-      email: user.email ?? null,
-      firstName: user.firstName ?? null,
-      lastName: user.lastName ?? null,
-      profileImageUrl: null,
-    },
-  });
+  let sid: string;
+  try {
+    sid = await createSession({
+      user: {
+        id: user.id,
+        email: user.email ?? null,
+        firstName: user.firstName ?? null,
+        lastName: user.lastName ?? null,
+        profileImageUrl: null,
+      },
+    });
+  } catch {
+    // Roll back user creation so they can retry with the same email
+    await db.delete(usersTable).where(eq(usersTable.id, user.id)).catch(() => {});
+    res.status(500).json({ error: "Konto konnte nicht vollständig erstellt werden. Bitte erneut versuchen." });
+    return;
+  }
 
   setSessionCookie(res, sid);
   res.status(201).json({
