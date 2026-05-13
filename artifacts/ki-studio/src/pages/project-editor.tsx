@@ -15,17 +15,34 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Loader2, ArrowLeft, Send, Globe, Copy, Check,
-  AlertCircle, Download, ExternalLink, User, Bot, Sparkles,
-  Link as LinkIcon, Paperclip, X, Bug,
-} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Loader2, ArrowLeft, Send, Globe, Copy, Check,
+  AlertCircle, Download, ExternalLink, User, Bot, Sparkles,
+  Link as LinkIcon, Paperclip, X, Bug, Wrench,
+} from "lucide-react";
+
+/** Inject an error-capture script into generated HTML so JS errors are relayed via postMessage */
+function injectErrorCapture(html: string): string {
+  const script = `<script>
+(function(){
+  function send(msg){try{window.parent.postMessage({type:'KI_STUDIO_JS_ERROR',message:String(msg)},'*');}catch(e){}}
+  window.onerror=function(msg,src,line){send(msg+(src?' ('+src.split('/').pop()+':'+line+')':''));return false;};
+  window.addEventListener('unhandledrejection',function(e){send('Promise-Fehler: '+(e.reason&&e.reason.message||String(e.reason)));});
+})();
+\x3c/script>`;
+  if (html.includes('<head>')) return html.replace('<head>', '<head>' + script);
+  const headMatch = html.match(/<head[^>]*>/);
+  if (headMatch) return html.replace(headMatch[0], headMatch[0] + script);
+  const bodyMatch = html.match(/<body[^>]*>/);
+  if (bodyMatch) return html.replace(bodyMatch[0], bodyMatch[0] + script);
+  return script + html;
+}
 
 interface AttachedImage {
   name: string;
@@ -46,6 +63,7 @@ export default function ProjectEditor() {
   const [copied, setCopied] = useState(false);
   const [autoGenTriggered, setAutoGenTriggered] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const [iframeErrors, setIframeErrors] = useState<{ id: string; message: string }[]>([]);
   const prevStatusRef = useRef<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -96,7 +114,26 @@ export default function ProjectEditor() {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isGenerating]);
+  }, [messages, isGenerating, iframeErrors]);
+
+  // Clear iframe errors when new HTML is loaded
+  useEffect(() => {
+    setIframeErrors([]);
+  }, [iframeKey]);
+
+  // Listen for JS errors from the preview iframe via postMessage
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type !== "KI_STUDIO_JS_ERROR") return;
+      const msg = String(event.data.message ?? "Unbekannter Fehler");
+      setIframeErrors(prev => {
+        if (prev.some(e => e.message === msg)) return prev; // deduplicate
+        return [...prev, { id: crypto.randomUUID(), message: msg }];
+      });
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
 
   const publishProject = usePublishProject();
 
@@ -210,8 +247,10 @@ export default function ProjectEditor() {
     });
   };
 
-  const handleBugFix = useCallback(() => {
-    const bugFixPrompt = `Analysiere den vollständigen Code dieser App gründlich. Schreibe zuerst in 4-8 kurzen deutschen Sätzen welche Probleme du gefunden hast (Bugs, fehlende Funktionen, Design-Probleme). Dann erstelle sofort die komplett korrigierte und verbesserte Version. Starte deine Antwort mit "Ich habe folgende Probleme gefunden:" — dann direkt die Aufzählung — dann den HTML-Code.`;
+  const handleBugFix = useCallback((errorContext?: string) => {
+    const bugFixPrompt = errorContext
+      ? `Es gibt einen JavaScript-Fehler in der App: "${errorContext}". Erkläre auf Deutsch in 2-3 Sätzen warum dieser Fehler auftritt, dann erstelle sofort die vollständig korrigierte Version. Starte mit "Der Fehler tritt auf, weil:" — Erklärung — dann den HTML-Code.`
+      : `Analysiere den vollständigen Code dieser App gründlich. Schreibe zuerst in 4-8 kurzen deutschen Sätzen welche Probleme du gefunden hast (Bugs, fehlende Funktionen, Design-Probleme). Dann erstelle sofort die komplett korrigierte und verbesserte Version. Starte deine Antwort mit "Ich habe folgende Probleme gefunden:" — dann direkt die Aufzählung — dann den HTML-Code.`;
     setIsRefinement(true);
     handleGenerate(bugFixPrompt, []);
   }, [handleGenerate, setIsRefinement]);
@@ -341,7 +380,7 @@ export default function ProjectEditor() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={handleBugFix}
+                      onClick={() => handleBugFix()}
                       disabled={isGenerating}
                       className="h-8 gap-1.5 text-xs text-amber-400/80 hover:text-amber-400 hover:bg-amber-400/10"
                       data-testid="button-bug-fix"
@@ -530,6 +569,33 @@ export default function ProjectEditor() {
                 ))
               )}
 
+              {/* Live JS errors from iframe — detected automatically */}
+              {iframeErrors.map((err) => (
+                <div key={err.id} className="flex gap-2.5">
+                  <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                    <Bug className="w-3 h-3 text-amber-400" />
+                  </div>
+                  <div className="bg-amber-500/5 border border-amber-500/20 px-3 py-2.5 rounded-2xl rounded-tl-none max-w-[85%] space-y-2">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-semibold text-amber-400/90 uppercase tracking-wider flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        JavaScript-Fehler erkannt
+                      </p>
+                      <p className="text-xs text-foreground/75 font-mono break-all leading-relaxed">{err.message}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="h-6 text-xs gap-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 hover:border-amber-500/50"
+                      onClick={() => handleBugFix(err.message)}
+                      disabled={isGenerating}
+                    >
+                      <Wrench className="w-3 h-3" />
+                      Fehler automatisch beheben
+                    </Button>
+                  </div>
+                </div>
+              ))}
+
               {/* Active generation indicator */}
               {isGenerating && (
                 <div className="flex gap-2.5">
@@ -709,7 +775,7 @@ export default function ProjectEditor() {
                 <div className="absolute inset-3 bg-white rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/5">
                   <iframe
                     key={iframeKey}
-                    srcDoc={project.htmlCode ?? ""}
+                    srcDoc={injectErrorCapture(project.htmlCode ?? "")}
                     className="w-full h-full border-none"
                     title="Live Vorschau"
                     sandbox="allow-scripts allow-forms allow-popups allow-modals"

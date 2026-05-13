@@ -428,18 +428,51 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
       ];
 
       let fullResponse = "";
+      let providerNote = ""; // Set when auto-fallback fires — shown to the user in chat
 
-      const stream = await aiClient.chat.completions.create({
-        model: genModel,
-        max_tokens: 16000,
-        temperature: 0.2,
-        messages: codeMessages as Parameters<typeof aiClient.chat.completions.create>[0]["messages"],
-        stream: true,
-      });
+      const runGeneration = async (
+        genClient: typeof aiClient,
+        model: string,
+      ) => {
+        const stream = await genClient.chat.completions.create({
+          model,
+          max_tokens: 16000,
+          temperature: 0.2,
+          messages: codeMessages as Parameters<typeof aiClient.chat.completions.create>[0]["messages"],
+          stream: true,
+        });
+        let text = "";
+        for await (const chunk of stream) {
+          const delta = chunk.choices[0]?.delta?.content;
+          if (delta) text += delta;
+        }
+        return text;
+      };
 
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content;
-        if (delta) fullResponse += delta;
+      try {
+        fullResponse = await runGeneration(aiClient, genModel);
+      } catch (genErr: unknown) {
+        const errStatus = (genErr as { status?: number })?.status;
+        const isRetryable = errStatus === 429 || errStatus === 503 || errStatus === 500 || errStatus === 502;
+        if (!isRetryable) throw genErr;
+
+        log.warn({ provider, genModel, errStatus }, "Provider error — auto-retry with Pollinations fallback");
+
+        if (errStatus === 429) {
+          providerNote = `⚠️ **Anbieter-Limit erreicht (429):** Dein KI-Anbieter hat die Anfrage abgelehnt weil zu viele Anfragen in kurzer Zeit gesendet wurden. Ich habe automatisch auf den Backup-Anbieter umgeschaltet und den Code neu generiert. Warte kurz, bevor du den Hauptanbieter erneut nutzt.`;
+        } else {
+          providerNote = `⚠️ **Anbieter-Fehler (${errStatus}):** Dein KI-Anbieter hat einen temporären Fehler gemeldet. Ich habe automatisch auf den Backup-Anbieter umgeschaltet.`;
+        }
+
+        // Fallback: Pollinations ist immer verfügbar (kein API-Key nötig)
+        const { client: fallbackClient, codeReviewModel: fallbackModel } = getSupportClient();
+        try {
+          fullResponse = await runGeneration(fallbackClient, fallbackModel);
+        } catch (fallbackErr) {
+          // Even Pollinations failed — save the original error
+          log.error({ err: fallbackErr }, "Pollinations fallback also failed");
+          throw genErr;
+        }
       }
 
       // Robust HTML extraction — handles code blocks, leading text, any wrapping
@@ -548,11 +581,13 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
       // (HTML is already saved in projectsTable.htmlCode)
       const htmlStartIdx = fullResponse.search(/<!doctype html>/i);
       const analysisText = htmlStartIdx > 0 ? fullResponse.slice(0, htmlStartIdx).trim() : "";
+      // Combine provider error note (if fallback fired) with any analysis text from the AI
+      const messageContent = [providerNote, analysisText].filter(Boolean).join("\n\n");
 
       await db.insert(messagesTable).values({
         conversationId,
         role: "assistant",
-        content: analysisText,
+        content: messageContent,
       });
 
       await db
