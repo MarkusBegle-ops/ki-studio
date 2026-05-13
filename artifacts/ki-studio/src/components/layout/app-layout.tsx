@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { Link } from "wouter";
 import { Sparkles, LogOut, ChevronDown, Settings } from "lucide-react";
 import { useAuth } from "@workspace/auth-web";
@@ -11,9 +11,43 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { AdminPanel } from "@/components/admin-panel";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+
+  const clickCountRef = useRef(0);
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleLogoClick = useCallback(async (e: React.MouseEvent) => {
+    clickCountRef.current += 1;
+
+    if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+    clickTimerRef.current = setTimeout(() => {
+      clickCountRef.current = 0;
+    }, 2000);
+
+    if (clickCountRef.current >= 3) {
+      clickCountRef.current = 0;
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+      e.preventDefault();
+
+      if (isAdmin === null) {
+        try {
+          const res = await fetch("/api/admin/status", { credentials: "include", cache: "no-store" });
+          const data = await res.json() as { isAdmin: boolean };
+          setIsAdmin(data.isAdmin);
+          if (data.isAdmin) setAdminOpen(true);
+        } catch {
+          setIsAdmin(false);
+        }
+      } else if (isAdmin) {
+        setAdminOpen(true);
+      }
+    }
+  }, [isAdmin]);
 
   const initials = [user?.firstName, user?.lastName]
     .filter(Boolean)
@@ -25,7 +59,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex flex-col bg-background text-foreground dark">
       <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/80 backdrop-blur-md">
         <div className="container flex h-14 max-w-screen-xl items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
+          <Link
+            href="/"
+            className="flex items-center gap-2.5 hover:opacity-80 transition-opacity select-none"
+            onClick={handleLogoClick}
+          >
             <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
               <Sparkles className="h-3.5 w-3.5 text-primary" />
             </div>
@@ -83,9 +121,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           )}
         </div>
       </header>
+
       <main className="flex-1 flex flex-col">
         {children}
       </main>
+
+      <AdminPanel isOpen={adminOpen} onClose={() => setAdminOpen(false)} />
     </div>
   );
 }
