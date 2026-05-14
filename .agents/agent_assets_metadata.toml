@@ -6,3 +6,9 @@ id = "vQcjju0JUcUqW6h6x2xRK"
 uri = "file://ki-studio-source.zip"
 type = "unspecified"
 title = "KI Studio – vollständiger Quellcode"
+
+[[outputs]]
+id = "8jbTxHtJv3YljTrPIVDgu"
+uri = "file://KI-Studio-Code.zip"
+type = "unspecified"
+title = "KI Studio – Quellcode (frontend / backend / datenbank)"
