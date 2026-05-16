@@ -52,6 +52,19 @@ router.get("/admin/status", (req: Request, res: Response) => {
   res.json({ isAdmin: isAdmin(req) });
 });
 
+router.get("/download/code", async (_req: Request, res: Response) => {
+  try {
+    const filePath = path.join(REPO_ROOT, "artifacts/ki-studio/public/KI-Studio-Code.txt");
+    const content = await fs.readFile(filePath, "utf-8");
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="KI-Studio-Code.txt"');
+    res.setHeader("Cache-Control", "no-store");
+    res.send(content);
+  } catch {
+    res.status(404).json({ error: "Datei nicht gefunden" });
+  }
+});
+
 router.post("/admin/chat", async (req: Request, res: Response) => {
   if (!isAdmin(req)) { res.status(403).json({ error: "Zugriff verweigert" }); return; }
 
