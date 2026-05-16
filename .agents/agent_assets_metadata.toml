@@ -12,3 +12,9 @@ id = "8jbTxHtJv3YljTrPIVDgu"
 uri = "file://KI-Studio-Code.zip"
 type = "unspecified"
 title = "KI Studio – Quellcode (frontend / backend / datenbank)"
+
+[[outputs]]
+id = "t8FU7Q2rJacpXuNZ_AQFu"
+uri = "file://artifacts/ki-studio/public/KI-Studio-Code.txt"
+type = "text"
+title = "KI-Studio-Code.txt – Zum Download klicken"
