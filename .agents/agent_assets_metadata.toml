@@ -18,3 +18,9 @@ id = "t8FU7Q2rJacpXuNZ_AQFu"
 uri = "file://artifacts/ki-studio/public/KI-Studio-Code.txt"
 type = "text"
 title = "KI-Studio-Code.txt – Zum Download klicken"
+
+[[outputs]]
+id = "crAtVgFp42eZVef5O_Pse"
+uri = "file://KI-Studio-Aktuell.zip"
+type = "unspecified"
+title = "KI Studio – Aktuelle Version (102 Dateien)"
