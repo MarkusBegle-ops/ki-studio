@@ -30,7 +30,7 @@ services:
       - key: SESSION_SECRET
         generateValue: true
       - key: ADMIN_EMAIL
-        sync: false
+        value: markus.begle@icloud.com
 
   # ── Frontend (React + Vite, Static Site) ──────────────────────────────────
   - type: web
