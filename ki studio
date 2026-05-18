@@ -1,0 +1,46 @@
+databases:
+  - name: ki-studio-db
+    databaseName: ki_studio
+    user: ki_studio
+    plan: free
+
+services:
+  - type: web
+    name: ki-studio-api
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: >
+      npm install -g pnpm &&
+      pnpm install --frozen-lockfile &&
+      pnpm --filter @workspace/api-server run build
+    startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ki-studio-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: markus.begle@icloud.com
+
+  - type: web
+    name: ki-studio-frontend
+    runtime: static
+    plan: free
+    rootDir: .
+    buildCommand: >
+      npm install -g pnpm &&
+      pnpm install --frozen-lockfile &&
+      PORT=3000 BASE_PATH=/ pnpm --filter @workspace/ki-studio run build
+    staticPublishPath: artifacts/ki-studio/dist/public
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
