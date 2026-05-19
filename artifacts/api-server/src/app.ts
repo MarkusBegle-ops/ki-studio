@@ -42,11 +42,11 @@ if (process.env["NODE_ENV"] === "production") {
   const frontendDist = path.resolve(process.cwd(), "artifacts/ki-studio/dist/public");
   if (fs.existsSync(frontendDist)) {
     app.use(express.static(frontendDist));
-    app.get("*", (_req: Request, res: Response) => {
+    app.get(/.*/, (_req: Request, res: Response) => {
       res.sendFile(path.join(frontendDist, "index.html"));
     });
   } else {
-    app.get("*", (_req: Request, res: Response) => {
+    app.get(/.*/, (_req: Request, res: Response) => {
       res.status(404).send(`Frontend not found at: ${frontendDist}`);
     });
   }
