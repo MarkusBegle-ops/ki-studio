@@ -36,7 +36,6 @@ services:
   - type: web
     name: ki-studio-frontend
     runtime: static
-    plan: free
     rootDir: .
     buildCommand: >
       npm install -g pnpm &&
