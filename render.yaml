@@ -12,10 +12,7 @@ services:
     runtime: node
     plan: free
     rootDir: .
-    buildCommand: >
-      npm install -g pnpm &&
-      pnpm install --frozen-lockfile &&
-      pnpm --filter @workspace/api-server run build
+    buildCommand: corepack enable && corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server run build
     startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
     healthCheckPath: /api/healthz
     envVars:
@@ -37,10 +34,7 @@ services:
     name: ki-studio-frontend
     runtime: static
     rootDir: .
-    buildCommand: >
-      npm install -g pnpm &&
-      pnpm install --frozen-lockfile &&
-      PORT=3000 BASE_PATH=/ pnpm --filter @workspace/ki-studio run build
+    buildCommand: corepack enable && corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile && PORT=3000 BASE_PATH=/ pnpm --filter @workspace/ki-studio run build
     staticPublishPath: artifacts/ki-studio/dist/public
     routes:
       - type: rewrite
