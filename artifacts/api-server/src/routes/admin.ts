@@ -59,6 +59,7 @@ router.post("/admin/chat", async (req: Request, res: Response) => {
   const { message, history = [] } = req.body as { message: string; history: { role: string; content: string }[] };
   if (!message?.trim()) { res.status(400).json({ error: "Nachricht fehlt" }); return; }
 
+  if (!req.user) { res.status(401).json({ error: "Nicht angemeldet" }); return; }
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user.id));
 
   const userKeys = {
@@ -70,9 +71,12 @@ router.post("/admin/chat", async (req: Request, res: Response) => {
     nvidiaApiKey: user?.nvidiaApiKey ?? null,
   };
 
-  const aiClient = (userKeys.openrouterApiKey || userKeys.nvidiaApiKey || userKeys.groqApiKey || userKeys.geminiApiKey || userKeys.openaiApiKey || userKeys.mistralApiKey)
-    ? getAIClient(userKeys)
-    : getSupportClient();
+  const hasUserKey = !!(userKeys.openrouterApiKey || userKeys.nvidiaApiKey || userKeys.groqApiKey || userKeys.geminiApiKey || userKeys.openaiApiKey || userKeys.mistralApiKey);
+  const aiClientRaw = hasUserKey ? getAIClient(userKeys) : getSupportClient();
+  const aiClient = {
+    client: aiClientRaw.client,
+    textModel: "textModel" in aiClientRaw ? aiClientRaw.textModel : aiClientRaw.reviewModel,
+  };
 
   const sourceFiles = await readSourceFiles();
   const fileContext = sourceFiles.map(f =>
