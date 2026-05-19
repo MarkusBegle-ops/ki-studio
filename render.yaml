@@ -12,7 +12,7 @@ services:
     runtime: node
     plan: free
     rootDir: .
-    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server run build
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @workspace/db run push && pnpm --filter @workspace/api-server run build
     startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
     healthCheckPath: /api/healthz
     envVars:
