@@ -38,16 +38,18 @@ app.use(authMiddleware);
 app.use("/api", router);
 
 // Serve built frontend in production
-const frontendDist = path.resolve(
-  path.dirname(new URL(import.meta.url).pathname),
-  "../../artifacts/ki-studio/dist/public",
-);
-
-if (process.env["NODE_ENV"] === "production" && fs.existsSync(frontendDist)) {
-  app.use(express.static(frontendDist));
-  app.get("*", (_req: Request, res: Response) => {
-    res.sendFile(path.join(frontendDist, "index.html"));
-  });
+if (process.env["NODE_ENV"] === "production") {
+  const frontendDist = path.resolve(process.cwd(), "artifacts/ki-studio/dist/public");
+  if (fs.existsSync(frontendDist)) {
+    app.use(express.static(frontendDist));
+    app.get("*", (_req: Request, res: Response) => {
+      res.sendFile(path.join(frontendDist, "index.html"));
+    });
+  } else {
+    app.get("*", (_req: Request, res: Response) => {
+      res.status(404).send(`Frontend not found at: ${frontendDist}`);
+    });
+  }
 }
 
 export default app;
