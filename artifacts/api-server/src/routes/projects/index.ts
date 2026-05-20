@@ -475,8 +475,11 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
         }
       }
 
-      // Robust HTML extraction — handles code blocks, leading text, any wrapping
+      // Robust HTML extraction — handles code blocks, <think> tags, leading text, any wrapping
       let htmlCode = fullResponse.trim();
+
+      // 0. Strip <think>...</think> blocks (reasoning models like qwen3-coder, deepseek-r1)
+      htmlCode = htmlCode.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 
       // 1. If inside a code block, extract the content
       const codeBlockMatch = htmlCode.match(/```(?:html)?\s*\n?([\s\S]*?)\n?```/is);
@@ -486,14 +489,14 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
 
       // 2. Find <!DOCTYPE html> and slice from there — ignores any leading explanation text
       const doctypeIdx = htmlCode.toLowerCase().indexOf("<!doctype html>");
-      if (doctypeIdx > 0) {
+      if (doctypeIdx >= 0) {
         htmlCode = htmlCode.slice(doctypeIdx);
       }
 
       // 3. If still no DOCTYPE, try finding <html> as fallback
       if (!htmlCode.toLowerCase().startsWith("<!doctype") && !htmlCode.toLowerCase().startsWith("<html")) {
         const htmlTagIdx = htmlCode.toLowerCase().indexOf("<html");
-        if (htmlTagIdx > 0) {
+        if (htmlTagIdx >= 0) {
           htmlCode = htmlCode.slice(htmlTagIdx);
         }
       }
