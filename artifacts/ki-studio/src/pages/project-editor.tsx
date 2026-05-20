@@ -430,24 +430,31 @@ export default function ProjectEditor() {
               </Label>
             </div>
 
+            <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleBugFix()}
+                    disabled={isGenerating || !project.htmlCode}
+                    className={`h-8 gap-1.5 text-xs ${iframeErrors.length > 0 ? "text-amber-400 bg-amber-400/10 hover:bg-amber-400/20" : "text-amber-400/80 hover:text-amber-400 hover:bg-amber-400/10"}`}
+                    data-testid="button-bug-fix"
+                  >
+                    <Bug className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">
+                      {iframeErrors.length > 0 ? `${iframeErrors.length} Fehler beheben` : "Fehler beheben"}
+                    </span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {project.htmlCode
+                    ? "KI analysiert deinen Code und behebt alle Fehler automatisch"
+                    : "Erst eine App generieren, dann Fehler beheben"}
+                </TooltipContent>
+              </Tooltip>
+
             {project.htmlCode && (
               <>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleBugFix()}
-                      disabled={isGenerating}
-                      className="h-8 gap-1.5 text-xs text-amber-400/80 hover:text-amber-400 hover:bg-amber-400/10"
-                      data-testid="button-bug-fix"
-                    >
-                      <Bug className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Fehler beheben</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>KI analysiert deinen Code und behebt alle Fehler automatisch</TooltipContent>
-                </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -686,6 +693,27 @@ export default function ProjectEditor() {
 
               <div ref={chatEndRef} />
             </div>
+
+            {/* Auto-Fix Banner — shown when JS errors are detected in the preview */}
+            {iframeErrors.length > 0 && !isGenerating && (
+              <div className="mx-3 mb-0 mt-1 flex items-center justify-between gap-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Bug className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="text-xs text-amber-300 font-medium truncate">
+                    {iframeErrors.length === 1 ? "1 Fehler erkannt" : `${iframeErrors.length} Fehler erkannt`}
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => handleBugFix()}
+                  className="h-7 text-xs gap-1.5 bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 border border-amber-500/40 hover:border-amber-500/60 shrink-0"
+                  data-testid="button-auto-fix-banner"
+                >
+                  <Wrench className="w-3 h-3" />
+                  Automatisch beheben
+                </Button>
+              </div>
+            )}
 
             {/* Input */}
             <div className="p-3 border-t border-border/40 bg-background/40">
