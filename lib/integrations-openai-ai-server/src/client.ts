@@ -31,11 +31,11 @@ export function getAIClient(keys: UserApiKeys): AIClient {
           "X-Title": "KI Studio",
         },
       }),
-      // gemini-2.5-flash: best free model — no thinking overhead, vision-capable, large context
+      // hermes-3-405b: best free code model on OpenRouter — 405B params, no thinking overhead
       // llama-3.3-70b: fast for planning/text
       textModel: "meta-llama/llama-3.3-70b-instruct:free",
-      visionModel: "google/gemini-2.5-flash:free",
-      codeModel: "google/gemini-2.5-flash:free",
+      visionModel: "meta-llama/llama-3.3-70b-instruct:free",
+      codeModel: "nousresearch/hermes-3-llama-3.1-405b:free",
       provider: "openrouter",
     };
   }
@@ -119,8 +119,8 @@ export function getAIClient(keys: UserApiKeys): AIClient {
         },
       }),
       textModel: "meta-llama/llama-3.3-70b-instruct:free",
-      visionModel: "google/gemini-2.5-flash:free",
-      codeModel: "google/gemini-2.5-flash:free",
+      visionModel: "meta-llama/llama-3.3-70b-instruct:free",
+      codeModel: "nousresearch/hermes-3-llama-3.1-405b:free",
       provider: "openrouter",
     };
   }
