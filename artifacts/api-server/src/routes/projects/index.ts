@@ -478,25 +478,74 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
         fallbackChain.push({ client: support.client, model: "deepseek", name: "pollinations", isPollinations: true });
       }
 
-      const runGeneration = async (entry: FallbackEntry) => {
-        // Pollinations max_tokens limit — 16000 causes empty responses
-        const maxTok = entry.isPollinations ? 4096 : 16000;
-
-        // Pollinations: trim system prompt to avoid context overflow
-        const msgs = entry.isPollinations
-          ? codeMessages.map((m, i) => {
-              if (i === 0 && typeof m.content === "string") {
-                return { ...m, content: m.content.slice(0, 3000) };
+      const runGeneration = async (entry: FallbackEntry): Promise<string> => {
+        if (entry.isPollinations) {
+          // Pollinations legacy API does NOT support SSE streaming reliably.
+          // Use plain JSON POST instead — more reliable for long responses.
+          const sysPrompt = typeof codeMessages[0]?.content === "string"
+            ? codeMessages[0].content.slice(0, 2500)
+            : "";
+          const userParts = codeMessages.slice(1).map(m =>
+            typeof m.content === "string" ? m.content : JSON.stringify(m.content)
+          ).join("\n");
+          const body = JSON.stringify({
+            model: entry.model,
+            max_tokens: 4096,
+            temperature: 0.2,
+            messages: [
+              { role: "system", content: sysPrompt },
+              { role: "user", content: userParts.slice(0, 4000) },
+            ],
+          });
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 90_000);
+          let text = "";
+          try {
+            const res = await fetch("https://text.pollinations.ai/openai", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body,
+              signal: ctrl.signal,
+            });
+            clearTimeout(t);
+            if (!res.ok) throw new Error(`Pollinations HTTP ${res.status}`);
+            // May return either JSON or SSE — handle both
+            const raw = await res.text();
+            // Try SSE parsing first
+            if (raw.includes("data: {")) {
+              for (const line of raw.split("\n")) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith("data:")) continue;
+                const jsonStr = trimmed.slice(5).trim();
+                if (jsonStr === "[DONE]") break;
+                try {
+                  const chunk = JSON.parse(jsonStr) as { choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }> };
+                  const delta = chunk.choices?.[0]?.delta?.content ?? chunk.choices?.[0]?.message?.content ?? "";
+                  if (delta) text += delta;
+                } catch { /* skip malformed chunk */ }
               }
-              return m;
-            })
-          : codeMessages;
+            } else {
+              // Plain JSON response
+              try {
+                const json = JSON.parse(raw) as { choices?: Array<{ message?: { content?: string } }> };
+                text = json.choices?.[0]?.message?.content ?? "";
+              } catch {
+                text = raw;
+              }
+            }
+          } finally {
+            clearTimeout(t);
+          }
+          if (!text.trim()) throw new Error(`Pollinations ${entry.model} returned empty response`);
+          return text;
+        }
 
+        // Non-Pollinations: standard OpenAI streaming
         const stream = await entry.client.chat.completions.create({
           model: entry.model,
-          max_tokens: maxTok,
+          max_tokens: 16000,
           temperature: 0.2,
-          messages: msgs as Parameters<typeof entry.client.chat.completions.create>[0]["messages"],
+          messages: codeMessages as Parameters<typeof entry.client.chat.completions.create>[0]["messages"],
           stream: true,
         });
         let text = "";
