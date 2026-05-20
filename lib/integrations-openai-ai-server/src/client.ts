@@ -19,7 +19,7 @@ export interface AIClient {
 }
 
 export function getAIClient(keys: UserApiKeys): AIClient {
-  // Priority: OpenRouter → NVIDIA → Groq → Gemini → OpenAI → Mistral → Pollinations (free fallback)
+  // Priority: OpenRouter → NVIDIA → Groq → Gemini → OpenAI → Mistral → Server OpenRouter → Pollinations (free fallback)
 
   if (keys.openrouterApiKey) {
     return {
@@ -104,6 +104,25 @@ export function getAIClient(keys: UserApiKeys): AIClient {
       visionModel: "mistral-large-latest",
       codeModel: "codestral-latest",
       provider: "mistral",
+    };
+  }
+
+  // Server-seitiger OpenRouter-Key (Render-Umgebungsvariable) — Fallback ohne User-Key
+  const serverOpenRouterKey = process.env["OPENROUTER_API_KEY"];
+  if (serverOpenRouterKey) {
+    return {
+      client: new OpenAI({
+        apiKey: serverOpenRouterKey,
+        baseURL: "https://openrouter.ai/api/v1",
+        defaultHeaders: {
+          "HTTP-Referer": "https://ki-studio.app",
+          "X-Title": "KI Studio",
+        },
+      }),
+      textModel: "meta-llama/llama-3.3-70b-instruct:free",
+      visionModel: "nvidia/nemotron-nano-12b-v2-vl:free",
+      codeModel: "qwen/qwen3-coder:free",
+      provider: "openrouter",
     };
   }
 
