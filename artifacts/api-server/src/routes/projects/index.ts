@@ -340,18 +340,43 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
         const planningMessages: ChatMsg[] = [
           {
             role: "system",
-            content: `Du bist ein erfahrener Softwarearchitekt und UI/UX-Experte. Erstelle einen konkreten, detaillierten Implementierungsplan für eine erstklassige Web-App.
+            content: `Du bist ein erfahrener Senior-Frontend-Architekt. Deine Aufgabe: Erstelle einen KONKRETEN, DETAILLIERTEN Implementierungsplan für eine professionelle Web-App der Spitzenklasse (Niveau: Linear, Vercel, Figma). Dieser Plan wird direkt von einem Code-Generator verwendet — sei also maximal präzise und konkret.
 
-Dein Plan MUSS enthalten:
-1. ZWECK & KERNFUNKTIONEN: Was macht die App — alle wichtigen Features auflisten
-2. LAYOUT-ENTSCHEIDUNG: Sidebar-Dashboard ODER Top-Nav-Portal ODER Single-Page — begründen
-3. VIEWS/SEKTIONEN: Alle Bereiche/Tabs mit je 1-2 Sätzen Beschreibung
-4. DATEN-BEISPIELE: Konkrete, realistische deutschsprachige Beispieldaten (Personen-Namen, Produktnamen, Städte etc.)
-5. DESIGN-ENTSCHEIDUNG: Dark-Theme ODER Light-Theme — Hauptfarbe + Akzentfarbe konkret nennen (Hex-Codes)
-6. CDN-LIBRARIES: Welche Libraries konkret verwendet werden und wofür (Chart.js für Liniendiagramm der Umsätze, etc.)
-7. BESONDERE FEATURES: Animationen, Microinteractions, Filter-Logik, Suchfunktion
+═══ PFLICHTSTRUKTUR DES PLANS ═══
 
-Antworte NUR mit dem Plan — strukturiert, präzise, max. 400 Wörter.`,
+**1. APP-KONZEPT**
+- Kernzweck in einem Satz
+- 5-8 konkrete Features (keine vagen Beschreibungen wie "Verwaltung", sondern "Kunden anlegen, bearbeiten, archivieren mit inline-Validierung")
+
+**2. LAYOUT-ARCHITEKTUR** (genau eines wählen)
+- [ ] Sidebar-Dashboard (240px links, collapsible) — für CRM/ERP/Analytics mit vielen Bereichen
+- [ ] Top-Navigation + Hero — für Tools, Portale, Marketing-Apps
+- [ ] Single-Feature-Focused — für Rechner, Spiele, Converter (kein komplexes Nav)
+
+**3. ALLE VIEWS/TABS** (min. 3, max. 7 — jeweils beschreiben):
+Beispiel-Format: "Dashboard: KPI-Karten (Umsatz, Kunden, Aufträge, Conversion), Linien-Chart Umsatzverlauf 12 Monate, Top-5-Kunden Tabelle"
+
+**4. DESIGN-SYSTEM**
+- Theme: DUNKEL (#0f1117 Hintergrund, #1a1d27 Karten) ODER HELL (#f8fafc BG, #ffffff Karten)
+- Primärfarbe + Hex-Code: z.B. Indigo #6366f1, Cyan #06b6d4, Emerald #10b981, Orange #f97316
+- Glow-Farbe: z.B. rgba(99,102,241,0.15) für Indigo
+
+**5. MUSTERDATEN** (min. 15 Datensätze — echte deutsche Namen/Orte/Produkte angeben):
+Beispiel: "Kunden: Sophie Müller (München), Tobias Weber (Hamburg), Anna Schmidt (Berlin)..."
+
+**6. CHART-SPEZIFIKATION** (falls Diagramme):
+- Chart-Typ (Linie/Balken/Donut/Radar) + was dargestellt wird + 12 konkrete Datenpunkte
+
+**7. INTERAKTIONS-FEATURES** (checken was passt):
+- Live-Suche über Datensätze
+- Sortierbare Tabellen-Spalten
+- Filter-Dropdown (nach Status/Kategorie)
+- CRUD-Modal (Erstellen/Bearbeiten/Löschen)
+- Toast-Notifications bei Aktionen
+- Export-Button (CSV-Download)
+- Dark/Light-Toggle
+
+Antworte NUR mit diesem Plan. Maximal 600 Wörter. Keine Code-Snippets, keine HTML.`,
           },
           ...userHistory,
           ...(images.length > 0
@@ -378,7 +403,7 @@ Antworte NUR mit dem Plan — strukturiert, präzise, max. 400 Wörter.`,
           try {
             const planStream = await aiClient.chat.completions.create({
               model: tryModel,
-              max_tokens: 800,
+              max_tokens: 1200,
               temperature: 0.3,
               messages: planningMessages as Parameters<typeof aiClient.chat.completions.create>[0]["messages"],
               stream: true,
