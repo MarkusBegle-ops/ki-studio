@@ -373,6 +373,12 @@ Antworte NUR mit dem Plan — kompakt, präzise, max. 300 Wörter.`,
             const delta = chunk.choices[0]?.delta?.content;
             if (delta) implementationPlan += delta;
           }
+          // Strip think-tags from planning response too
+          implementationPlan = implementationPlan
+            .replace(/<think>[\s\S]*?<\/think>/gi, "")
+            .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+            .replace(/<think>[\s\S]*$/i, "")
+            .trim();
           log.info({ provider, planModel, genModel }, "Planning step completed");
         } catch {
           // Planning step failed — continue without plan (still better than nothing)
@@ -507,8 +513,12 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
       // Robust HTML extraction — handles code blocks, <think> tags, leading text, any wrapping
       let htmlCode = fullResponse.trim();
 
-      // 0. Strip <think>...</think> blocks (reasoning models like qwen3-coder, deepseek-r1)
+      // 0. Strip reasoning/thinking blocks from all known reasoning models
+      // qwen3-coder uses <think>...</think>, deepseek uses <think>, some use <thinking>
       htmlCode = htmlCode.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+      htmlCode = htmlCode.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "").trim();
+      // Strip incomplete <think> at end (if model was cut off mid-thinking)
+      htmlCode = htmlCode.replace(/<think>[\s\S]*$/i, "").trim();
 
       // 1. If inside a code block, extract the content
       const codeBlockMatch = htmlCode.match(/```(?:html)?\s*\n?([\s\S]*?)\n?```/is);
