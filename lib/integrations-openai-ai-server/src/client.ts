@@ -31,12 +31,11 @@ export function getAIClient(keys: UserApiKeys): AIClient {
           "X-Title": "KI Studio",
         },
       }),
-      // qwen3-coder: best free coding model on OpenRouter (235B MoE, specialized for code)
-      // llama-3.3-70b: fast and reliable for planning/text steps
-      // gemini-2.0-flash-exp: vision-capable for image uploads
+      // gemini-2.5-flash: best free model — no thinking overhead, vision-capable, large context
+      // llama-3.3-70b: fast for planning/text
       textModel: "meta-llama/llama-3.3-70b-instruct:free",
-      visionModel: "google/gemini-2.0-flash-exp:free",
-      codeModel: "qwen/qwen3-coder:free",
+      visionModel: "google/gemini-2.5-flash:free",
+      codeModel: "google/gemini-2.5-flash:free",
       provider: "openrouter",
     };
   }
@@ -120,8 +119,8 @@ export function getAIClient(keys: UserApiKeys): AIClient {
         },
       }),
       textModel: "meta-llama/llama-3.3-70b-instruct:free",
-      visionModel: "nvidia/nemotron-nano-12b-v2-vl:free",
-      codeModel: "qwen/qwen3-coder:free",
+      visionModel: "google/gemini-2.5-flash:free",
+      codeModel: "google/gemini-2.5-flash:free",
       provider: "openrouter",
     };
   }
