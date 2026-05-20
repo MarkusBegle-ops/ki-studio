@@ -26,8 +26,32 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Plus, Code2, Globe, LayoutDashboard, Trash2, Clock, ArrowRight, Pencil, Check, X, PackageOpen, Layers } from "lucide-react";
+import { Plus, Code2, Globe, LayoutDashboard, Trash2, Clock, ArrowRight, Pencil, Check, X, PackageOpen, Layers, Zap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+const CARD_GRADIENTS = [
+  "from-cyan-500/20 via-primary/10 to-blue-600/15",
+  "from-violet-500/20 via-purple-500/10 to-indigo-600/15",
+  "from-emerald-500/20 via-teal-500/10 to-cyan-600/15",
+  "from-orange-500/20 via-amber-500/10 to-yellow-600/15",
+  "from-rose-500/20 via-pink-500/10 to-fuchsia-600/15",
+  "from-blue-500/20 via-sky-500/10 to-cyan-600/15",
+  "from-indigo-500/20 via-violet-500/10 to-purple-600/15",
+  "from-teal-500/20 via-emerald-500/10 to-green-600/15",
+];
+
+function relativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "gerade eben";
+  if (mins < 60) return `vor ${mins} Min.`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `vor ${hours} Std.`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "gestern";
+  if (days < 7) return `vor ${days} Tagen`;
+  return format(new Date(dateStr), "dd. MMM yyyy", { locale: de });
+}
 
 export default function Home() {
   const { toast } = useToast();
@@ -294,32 +318,59 @@ export default function Home() {
                     ) : (
                       /* Normal view mode */
                       <Link href={`/projekt/${project.id}`} className="block" data-testid={`card-project-${project.id}`}>
-                        <Card className="h-full bg-card/50 border-border/60 hover:border-primary/30 transition-all duration-200 hover:bg-card/70 hover:shadow-lg hover:shadow-primary/5 overflow-hidden">
-                          <CardHeader className="pb-3">
+                        <Card className="h-full bg-card/50 border-border/60 hover:border-primary/30 transition-all duration-200 hover:bg-card/70 hover:shadow-xl hover:shadow-primary/8 overflow-hidden group/card">
+                          {/* Colored gradient strip + mini preview */}
+                          <div className={`h-16 bg-gradient-to-br ${CARD_GRADIENTS[project.id % CARD_GRADIENTS.length]} relative overflow-hidden shrink-0`}>
+                            <div className="absolute inset-0 flex items-center justify-center opacity-20">
+                              <div className="flex gap-1.5">
+                                {[...Array(6)].map((_, k) => (
+                                  <div key={k} className="flex flex-col gap-1">
+                                    {[...Array(4)].map((_, j) => (
+                                      <div key={j} className="h-1 rounded-full bg-white" style={{ width: `${12 + ((project.id + k * 3 + j * 7) % 20)}px`, opacity: 0.4 + (j % 3) * 0.2 }} />
+                                    ))}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            {project.htmlCode && (
+                              <div className="absolute top-2 right-2">
+                                <div className="bg-black/30 backdrop-blur-sm rounded-full px-1.5 py-0.5 flex items-center gap-1">
+                                  <Zap className="w-2.5 h-2.5 text-white/80" />
+                                  <span className="text-[9px] text-white/80 font-medium">{Math.round((project.htmlCode?.length ?? 0) / 1000)}k</span>
+                                </div>
+                              </div>
+                            )}
+                            {project.isPublished && (
+                              <div className="absolute top-2 left-2">
+                                <div className="bg-black/30 backdrop-blur-sm rounded-full px-1.5 py-0.5 flex items-center gap-1">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                  <span className="text-[9px] text-white/80 font-medium">Live</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          <CardHeader className="pb-2 pt-3">
                             <div className="flex justify-between items-start gap-3">
-                              <CardTitle className="text-base font-semibold line-clamp-1 group-hover:text-primary transition-colors">
+                              <CardTitle className="text-sm font-semibold line-clamp-1 group-hover/card:text-primary transition-colors">
                                 {project.title}
                               </CardTitle>
-                              <Badge
-                                variant={project.isPublished ? "default" : "secondary"}
-                                className={project.isPublished
-                                  ? "bg-primary/10 text-primary border border-primary/20 shrink-0 text-xs py-0"
-                                  : "shrink-0 text-xs py-0 border border-border/50"}
-                              >
-                                {project.isPublished ? "Live" : "Entwurf"}
-                              </Badge>
+                              {!project.isPublished && (
+                                <Badge variant="secondary" className="shrink-0 text-[10px] py-0 h-4 px-1.5 border border-border/50">
+                                  Entwurf
+                                </Badge>
+                              )}
                             </div>
-                            <CardDescription className="line-clamp-2 mt-1.5 text-xs leading-relaxed min-h-[2.5rem]">
+                            <CardDescription className="line-clamp-2 mt-1 text-xs leading-relaxed min-h-[2.25rem]">
                               {project.description || <span className="italic opacity-60">Keine Beschreibung</span>}
                             </CardDescription>
                           </CardHeader>
-                          <CardFooter className="pt-0 pb-4 flex items-center justify-between">
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground/60">
-                              <Clock className="w-3 h-3" />
-                              {format(new Date(project.createdAt), "dd. MMM yyyy", { locale: de })}
+                          <CardFooter className="pt-0 pb-3 flex items-center justify-between">
+                            <div className="flex items-center gap-1 text-[10px] text-muted-foreground/50">
+                              <Clock className="w-2.5 h-2.5" />
+                              {relativeTime(project.updatedAt ?? project.createdAt)}
                             </div>
-                            <span className="text-xs text-primary/0 group-hover:text-primary/60 transition-colors flex items-center gap-1">
-                              Öffnen <ArrowRight className="w-3 h-3" />
+                            <span className="text-[10px] text-primary/0 group-hover/card:text-primary/60 transition-colors flex items-center gap-0.5">
+                              Öffnen <ArrowRight className="w-2.5 h-2.5" />
                             </span>
                           </CardFooter>
                         </Card>
