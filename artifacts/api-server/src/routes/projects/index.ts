@@ -466,18 +466,39 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
           fallbackChain.push({ client: fb.client, model: fb.codeModel, name: cand.keyName });
         } catch { /* skip */ }
       }
-      // Always add Pollinations as last resort
+      // Always add Pollinations as last resort (two models for reliability)
       const support = getSupportClient();
       if (provider !== "pollinations") {
-        fallbackChain.push({ client: support.client, model: support.codeReviewModel, name: "pollinations" });
+        fallbackChain.push({ client: support.client, model: "openai", name: "pollinations" });
+        fallbackChain.push({ client: support.client, model: "mistral", name: "pollinations" });
+        fallbackChain.push({ client: support.client, model: "deepseek", name: "pollinations" });
       }
 
+      // Pollinations has much lower limits — cap tokens to avoid empty responses
+      const POLLINATIONS_MAX_TOKENS = 4096;
+      const isPollinationsClient = (c: typeof aiClient) =>
+        (c as unknown as { _options?: { baseURL?: string } })._options?.baseURL?.includes("pollinations") ?? false;
+
       const runGeneration = async (genClient: typeof aiClient, model: string) => {
+        const isPollinations = isPollinationsClient(genClient);
+        const maxTok = isPollinations ? POLLINATIONS_MAX_TOKENS : 16000;
+
+        // For Pollinations, shorten the system prompt to stay within context limits
+        const msgs = isPollinations
+          ? codeMessages.map((m, i) => {
+              if (i === 0 && typeof m.content === "string") {
+                // Trim system prompt to ~3000 chars for Pollinations
+                return { ...m, content: m.content.slice(0, 3000) };
+              }
+              return m;
+            })
+          : codeMessages;
+
         const stream = await genClient.chat.completions.create({
           model,
-          max_tokens: 16000,
+          max_tokens: maxTok,
           temperature: 0.2,
-          messages: codeMessages as Parameters<typeof genClient.chat.completions.create>[0]["messages"],
+          messages: msgs as Parameters<typeof genClient.chat.completions.create>[0]["messages"],
           stream: true,
         });
         let text = "";
