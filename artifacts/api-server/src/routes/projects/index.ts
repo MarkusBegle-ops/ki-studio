@@ -340,17 +340,18 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
         const planningMessages: ChatMsg[] = [
           {
             role: "system",
-            content: `Du bist ein erfahrener Softwarearchitekt. Erstelle einen präzisen Implementierungsplan für eine Web-App.
+            content: `Du bist ein erfahrener Softwarearchitekt und UI/UX-Experte. Erstelle einen konkreten, detaillierten Implementierungsplan für eine erstklassige Web-App.
 
-Dein Plan soll enthalten:
-1. ZWECK: Was macht die App (1-2 Sätze)
-2. SCREENS/SEITEN: Welche Views/Bereiche gibt es
-3. KOMPONENTEN: Wichtigste UI-Elemente und ihre Funktion
-4. DATEN: Welche Beispieldaten werden benötigt (konkrete Beispiele)
-5. DESIGN: Farbschema, Stil, besondere visuelle Elemente
-6. TECHNOLOGIE: Welche CDN-Libraries sinnvoll sind (Chart.js, Alpine.js, etc.)
+Dein Plan MUSS enthalten:
+1. ZWECK & KERNFUNKTIONEN: Was macht die App — alle wichtigen Features auflisten
+2. LAYOUT-ENTSCHEIDUNG: Sidebar-Dashboard ODER Top-Nav-Portal ODER Single-Page — begründen
+3. VIEWS/SEKTIONEN: Alle Bereiche/Tabs mit je 1-2 Sätzen Beschreibung
+4. DATEN-BEISPIELE: Konkrete, realistische deutschsprachige Beispieldaten (Personen-Namen, Produktnamen, Städte etc.)
+5. DESIGN-ENTSCHEIDUNG: Dark-Theme ODER Light-Theme — Hauptfarbe + Akzentfarbe konkret nennen (Hex-Codes)
+6. CDN-LIBRARIES: Welche Libraries konkret verwendet werden und wofür (Chart.js für Liniendiagramm der Umsätze, etc.)
+7. BESONDERE FEATURES: Animationen, Microinteractions, Filter-Logik, Suchfunktion
 
-Antworte NUR mit dem Plan — kompakt, präzise, max. 300 Wörter.`,
+Antworte NUR mit dem Plan — strukturiert, präzise, max. 400 Wörter.`,
           },
           ...userHistory,
           ...(images.length > 0
@@ -388,39 +389,102 @@ Antworte NUR mit dem Plan — kompakt, präzise, max. 300 Wörter.`,
 
       // ── STEP 2: Code generation (uses specialized codeModel) ─────────────────
       const codeSystemPrompt = isRefinement
-        ? `Du bist ein Elite-Webentwickler. Du hast bereits eine vollständige HTML-App generiert. Verfeinere sie präzise anhand der Nutzeranweisung.
+        ? `Du bist ein Senior Full-Stack-Entwickler und UI/UX-Experte der Extraklasse. Du hast bereits eine vollständige HTML-App generiert. Überarbeite sie jetzt präzise und mit höchster Sorgfalt anhand der Nutzeranweisung.
 
 AKTUELLE APP:
 \`\`\`html
 ${currentHtml.slice(0, 55000)}
 \`\`\`
 
-REGELN:
-- Setze JEDE Änderung vollständig um — kein Detail zu klein
-- Behalte ALLE bestehenden Funktionen, außer wenn explizit anders gewünscht
-- Verbessere Qualität, Performance und Aussehen wo möglich
-- Wenn Bilder/Screenshots hochgeladen: Design EXAKT anpassen
-- Gib die KOMPLETTE überarbeitete HTML-Datei zurück
+ÜBERARBEITUNGSREGELN:
+- Setze JEDE gewünschte Änderung vollständig und fehlerfrei um
+- Behalte ALLE bestehenden Funktionen, Daten und Designs — außer explizit geändert
+- Verbessere dabei aktiv: Animationen verfeinern, Hover-States ergänzen, Code optimieren
+- Wenn Bilder/Screenshots beigefügt: Design pixelgenau anpassen
+- Keine Regressions — alles was vorher funktionierte, muss weiter funktionieren
+- Gib die KOMPLETTE überarbeitete HTML-Datei zurück — niemals nur Ausschnitte
 
-OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen.`
-        : `Du bist ein Elite-Webentwickler und UI/UX-Designer. Setze den folgenden Plan als vollständige, professionelle Web-App in einer einzigen HTML-Datei um.
+OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Kommentare, KEINE Erklärungen.`
+        : `Du bist ein weltklasse Frontend-Entwickler und UI/UX-Designer. Deine Aufgabe: Erstelle eine atemberaubend schöne, vollständig funktionierende Web-App als einzelne HTML-Datei — auf dem Niveau professioneller SaaS-Produkte.
 
-${implementationPlan ? `IMPLEMENTIERUNGSPLAN:\n${implementationPlan}\n\n` : ""}QUALITÄTSSTANDARDS — alle MÜSSEN erfüllt sein:
-1. VOLLSTÄNDIGKEIT: Jede Funktion vollständig implementiert — kein "TODO", keine Platzhalter
-2. DESIGN: Professionelles, modernes UI — sorgfältige Farben, Typographie, Hover-Effekte, Übergänge
-3. FUNKTIONALITÄT: Alle Interaktionen funktionieren — Formulare, Navigation, Filter, Animationen
-4. DATEN: Mindestens 10-15 realistische Beispieldatensätze — die App soll sofort lebendig wirken
-5. RESPONSIVITÄT: Einwandfreies Layout auf Desktop, Tablet und Mobile
-6. DETAILS: Hover-States, Lade-Animationen, Fehlerzustände, leere Zustände
+${implementationPlan ? `IMPLEMENTIERUNGSPLAN:\n${implementationPlan}\n\n` : ""}═══════════════════════════════════════════
+DESIGN-STANDARD (PFLICHT — jeder Punkt muss erfüllt sein)
+═══════════════════════════════════════════
 
-TECHNISCHE VORGABEN:
-- Einzelne HTML-Datei: CSS in <style>, JS in <script>
-- CDN-Libraries nach Bedarf: Tailwind CSS, Chart.js, Alpine.js, Lucide Icons, Google Fonts, Animate.css
-- Keine externen API-Aufrufe — alles client-seitig mit eingebetteten Mock-Daten
-- Sprache: Deutsch (außer der Nutzer gibt explizit etwas anderes an)
-- Umfang: So viel Code wie nötig — 800 bis 3000+ Zeilen
+VISUELLES DESIGN:
+• Konsistentes Farbsystem mit CSS Custom Properties (--primary, --bg, --surface, --text, --border, --accent)
+• Entweder elegantes dunkles Theme (bg: #0f1117 / #1a1d27) ODER frisches helles Theme — je nach App-Typ
+• Glassmorphism für Karten: background: rgba(255,255,255,0.05); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08)
+• Schöne Farbverläufe: gradient backgrounds für Hero-Bereiche, Buttons, Highlights
+• Typographie: Google Fonts einbinden (Inter, Poppins oder Outfit — nach App-Typ wählen)
+• Klare visuelle Hierarchie: Headlines groß & fett, Body lesbar, Labels klein & dezent
+• Icons: Lucide Icons CDN für alle Icons (<i data-lucide="name"></i>, lucide.createIcons() am Ende)
 
-OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen.`;
+LAYOUT & STRUKTUR:
+• Sidebar-Navigation (240px breit, collapsible) für alle Dashboard/Management-Apps
+• Top-Navigation mit Logo + Suchfeld + User-Avatar für Portal-Apps
+• CSS Grid für Karten-Layouts, Flexbox für Zeilen und Toolbar-Elemente
+• Responsive: mobile-first, Breakpoints bei 768px und 1024px
+• Consistent spacing: 4px-Raster (8, 12, 16, 24, 32, 48px)
+
+ANIMATIONEN & INTERAKTIONEN (PFLICHT):
+• Page-Load: Karten erscheinen mit fadeInUp (0.3s, 50ms staggered delay pro Element)
+• Hover-Effekte: alle klickbaren Elemente — transform: translateY(-2px), box-shadow wächst, background ändert sich
+• Buttons: scale(0.97) on click (active state), smooth 0.15s transition
+• Sidebar active state: animierter linker Balken (::before pseudo-element), background highlight
+• Smooth Scroll, smooth Farbübergänge (transition: all 0.2s ease auf fast allen Elementen)
+• Modale/Overlays: opacity + transform fade-in (0.25s)
+• Loading-Spinner für async-artige Aktionen
+
+KOMPONENTEN-QUALITÄT:
+• Suchfelder: live-filter der Daten per JavaScript (kein Submit nötig)
+• Tabellen: sortierbar per Klick auf Header, zebra-striping, hover-Highlight
+• Formulare: inline Validierung mit visuellen Fehlermeldungen, Erfolgs-Feedback
+• Buttons: primär (filled), sekundär (outlined), gefährlich (rot) — alle mit Icons
+• Badges/Tags: Statusindikatoren mit Farb-Codierung (grün/gelb/rot/blau)
+• Notifications/Toast: oben rechts einblendende Benachrichtigungen bei Aktionen
+• Empty States: schöne Illustration (SVG inline) wenn keine Daten vorhanden
+• Tooltips: erscheinen bei Hover über Buttons/Icons
+
+═══════════════════════════════════════════
+TECHNISCHE VORGABEN
+═══════════════════════════════════════════
+
+PFLICHT-CDN-LIBRARIES (immer einbinden wenn sinnvoll):
+\`\`\`html
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<!-- Lucide Icons -->
+<script src="https://unpkg.com/lucide@latest"></script>
+<!-- Chart.js (für Diagramme) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Alpine.js (optional, für reaktive UI ohne Vue/React) -->
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+\`\`\`
+
+DATEN-ANFORDERUNGEN:
+• Mindestens 15-25 realistische, deutschsprachige Datensätze — Namen, Städte, Produkte etc.
+• Daten sollen sofort die Stärken der App demonstrieren (verschiedene Stati, Kategorien, Zeiträume)
+• Bei Diagrammen: mehrere Datenpunkte über 6-12 Monate
+
+ARCHITEKTUR:
+• Einzelne HTML-Datei: CSS in <style> im <head>, JavaScript in <script> vor </body>
+• State-Management in einem zentralen JS-Objekt (let state = { ... })
+• Render-Funktionen: renderApp() und spezifische render*() Funktionen
+• Event-Listener nach dem initialen render() setzen
+• Keine externen API-Aufrufe — alles client-seitig mit eingebetteten Mock-Daten
+• localStorage nutzen wo sinnvoll (Einstellungen, Favoriten)
+
+VOLLSTÄNDIGKEIT:
+• Jede Funktion vollständig implementiert — KEIN "TODO", KEIN "// implement later"
+• Alle UI-Elemente klickbar und mit sinnvoller Reaktion verbunden
+• Formularabsendung mit Validierung und Bestätigungsmeldung
+• Mindestens 2-3 verschiedene "Views" oder Sektionen navigierbar
+
+SPRACHE: Deutsch (außer der Nutzer gibt explizit etwas anderes an)
+UMFANG: 1000 bis 4000+ Zeilen — lieber zu viel als zu wenig
+
+OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEINE Erklärungen davor oder danach.`;
 
       const codeMessages: ChatMsg[] = [
         { role: "system", content: codeSystemPrompt },
@@ -490,7 +554,7 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
           ).join("\n");
           const body = JSON.stringify({
             model: entry.model,
-            max_tokens: 4096,
+            max_tokens: 8192,
             temperature: 0.2,
             messages: [
               { role: "system", content: sysPrompt },
