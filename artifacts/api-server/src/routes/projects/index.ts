@@ -436,11 +436,11 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
       let fullResponse = "";
       let providerNote = ""; // Set when auto-fallback fires — shown to the user in chat
 
-      type FallbackEntry = { client: typeof aiClient; model: string; name: string };
+      type FallbackEntry = { client: typeof aiClient; model: string; name: string; isPollinations: boolean };
       const fallbackChain: FallbackEntry[] = [];
 
       // Primary provider first
-      fallbackChain.push({ client: aiClient, model: genModel, name: provider });
+      fallbackChain.push({ client: aiClient, model: genModel, name: provider, isPollinations: provider === "pollinations" });
 
       // Add remaining providers with keys as fallbacks (skip primary)
       const candidateFallbacks = [
@@ -463,42 +463,40 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
             mistralApiKey: cand.keyName === "mistral" ? cand.keyVal : null,
           };
           const fb = getAIClient(partialKeys);
-          fallbackChain.push({ client: fb.client, model: fb.codeModel, name: cand.keyName });
+          fallbackChain.push({ client: fb.client, model: fb.codeModel, name: cand.keyName, isPollinations: false });
         } catch { /* skip */ }
       }
-      // Always add Pollinations as last resort (two models for reliability)
+      // Always add Pollinations as last resort — three models for reliability
       const support = getSupportClient();
       if (provider !== "pollinations") {
-        fallbackChain.push({ client: support.client, model: "openai", name: "pollinations" });
-        fallbackChain.push({ client: support.client, model: "mistral", name: "pollinations" });
-        fallbackChain.push({ client: support.client, model: "deepseek", name: "pollinations" });
+        for (const polModel of ["openai", "mistral", "deepseek"] as const) {
+          fallbackChain.push({ client: support.client, model: polModel, name: "pollinations", isPollinations: true });
+        }
+      } else {
+        // Primary IS pollinations — still try all three models
+        fallbackChain.push({ client: support.client, model: "mistral", name: "pollinations", isPollinations: true });
+        fallbackChain.push({ client: support.client, model: "deepseek", name: "pollinations", isPollinations: true });
       }
 
-      // Pollinations has much lower limits — cap tokens to avoid empty responses
-      const POLLINATIONS_MAX_TOKENS = 4096;
-      const isPollinationsClient = (c: typeof aiClient) =>
-        (c as unknown as { _options?: { baseURL?: string } })._options?.baseURL?.includes("pollinations") ?? false;
+      const runGeneration = async (entry: FallbackEntry) => {
+        // Pollinations max_tokens limit — 16000 causes empty responses
+        const maxTok = entry.isPollinations ? 4096 : 16000;
 
-      const runGeneration = async (genClient: typeof aiClient, model: string) => {
-        const isPollinations = isPollinationsClient(genClient);
-        const maxTok = isPollinations ? POLLINATIONS_MAX_TOKENS : 16000;
-
-        // For Pollinations, shorten the system prompt to stay within context limits
-        const msgs = isPollinations
+        // Pollinations: trim system prompt to avoid context overflow
+        const msgs = entry.isPollinations
           ? codeMessages.map((m, i) => {
               if (i === 0 && typeof m.content === "string") {
-                // Trim system prompt to ~3000 chars for Pollinations
                 return { ...m, content: m.content.slice(0, 3000) };
               }
               return m;
             })
           : codeMessages;
 
-        const stream = await genClient.chat.completions.create({
-          model,
+        const stream = await entry.client.chat.completions.create({
+          model: entry.model,
           max_tokens: maxTok,
           temperature: 0.2,
-          messages: msgs as Parameters<typeof genClient.chat.completions.create>[0]["messages"],
+          messages: msgs as Parameters<typeof entry.client.chat.completions.create>[0]["messages"],
           stream: true,
         });
         let text = "";
@@ -506,7 +504,7 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
           const delta = chunk.choices[0]?.delta?.content;
           if (delta) text += delta;
         }
-        if (!text.trim()) throw new Error(`Provider ${model} returned empty response`);
+        if (!text.trim()) throw new Error(`Provider ${entry.model} returned empty response`);
         return text;
       };
 
@@ -514,7 +512,7 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
       for (const entry of fallbackChain) {
         try {
           log.info({ provider: entry.name, model: entry.model }, "Attempting generation");
-          fullResponse = await runGeneration(entry.client, entry.model);
+          fullResponse = await runGeneration(entry);
           if (entry.name !== provider) {
             providerNote = `⚠️ **Automatischer Anbieterwechsel:** Primärer Anbieter (${provider}) schlug fehl — erfolgreich mit **${entry.name}** generiert.`;
           }
