@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { getAIClient } from "@workspace/integrations-openai-ai-server";
+import { getAIClient, getSupportClient } from "@workspace/integrations-openai-ai-server";
 
 const router: IRouter = Router();
 
@@ -142,30 +142,67 @@ async function analyzeOne(url: string, keys: Awaited<ReturnType<typeof getUserKe
     `Beschreibung: ${metaDesc || "(keine)"}\n\n` +
     `Seiteninhalt:\n${bodyText || "(kein Text extrahierbar)"}`;
 
-  try {
-    const { client, textModel } = getAIClient(keys);
-    const completion = await client.chat.completions.create({
-      model: textModel,
-      max_tokens: 2048,
-      messages: [
-        { role: "system", content: systemMsg },
-        { role: "user", content: userMsg },
-      ],
-    });
+  const messages = [
+    { role: "system" as const, content: systemMsg },
+    { role: "user" as const, content: userMsg },
+  ];
 
-    const raw = completion.choices[0]?.message?.content ?? "";
-    const parsed = parseJson(raw);
+  // Build fallback chain: primary provider → Pollinations (always available, no key needed)
+  const primary = getAIClient(keys);
+  const support = getSupportClient();
+  const candidates = [
+    { client: primary.client, model: primary.textModel },
+    { client: support.client, model: "openai" },
+    { client: support.client, model: "mistral" },
+  ];
 
+  let lastErr: unknown;
+  for (const cand of candidates) {
+    try {
+      const completion = await cand.client.chat.completions.create({
+        model: cand.model,
+        max_tokens: 1024,
+        messages,
+      });
+      const raw = completion.choices[0]?.message?.content ?? "";
+      if (!raw.trim()) continue; // try next provider
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = parseJson(raw);
+      } catch {
+        // If JSON parsing fails, build a minimal result from page metadata
+        return {
+          url,
+          title: pageTitle || "Neues Projekt",
+          description: metaDesc || raw.slice(0, 200),
+          features: [],
+          prompt: `Erstelle eine App ähnlich wie: ${pageTitle || url}. ${metaDesc || ""}`.trim(),
+        };
+      }
+      return {
+        url,
+        title: typeof parsed.title === "string" ? parsed.title : pageTitle || "Neues Projekt",
+        description: typeof parsed.description === "string" ? parsed.description : "",
+        features: Array.isArray(parsed.features) ? (parsed.features as string[]) : [],
+        prompt: typeof parsed.prompt === "string" ? parsed.prompt : "",
+      };
+    } catch (err) {
+      lastErr = err;
+      // continue to next provider
+    }
+  }
+
+  // All providers failed — return minimal result based on page metadata so the user can still proceed
+  if (pageTitle || metaDesc) {
     return {
       url,
-      title: typeof parsed.title === "string" ? parsed.title : pageTitle || "Neues Projekt",
-      description: typeof parsed.description === "string" ? parsed.description : "",
-      features: Array.isArray(parsed.features) ? (parsed.features as string[]) : [],
-      prompt: typeof parsed.prompt === "string" ? parsed.prompt : "",
+      title: pageTitle || "Analyse fehlgeschlagen",
+      description: metaDesc || "",
+      features: [],
+      prompt: `Erstelle eine App ähnlich wie: ${pageTitle || url}. ${metaDesc || ""}`.trim(),
     };
-  } catch (err) {
-    throw new Error(friendlyError(err));
   }
+  throw new Error(friendlyError(lastErr));
 }
 
 router.post("/analyze-url", async (req, res): Promise<void> => {
