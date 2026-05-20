@@ -31,11 +31,11 @@ export function getAIClient(keys: UserApiKeys): AIClient {
           "X-Title": "KI Studio",
         },
       }),
-      // hermes-3-405b: best free code model on OpenRouter — 405B params, no thinking overhead
+      // deepseek-v3: state-of-the-art free code model — beats GPT-4 on coding benchmarks
       // llama-3.3-70b: fast for planning/text
       textModel: "meta-llama/llama-3.3-70b-instruct:free",
       visionModel: "meta-llama/llama-3.3-70b-instruct:free",
-      codeModel: "nousresearch/hermes-3-llama-3.1-405b:free",
+      codeModel: "deepseek/deepseek-chat-v3-0324:free",
       provider: "openrouter",
     };
   }
@@ -120,7 +120,7 @@ export function getAIClient(keys: UserApiKeys): AIClient {
       }),
       textModel: "meta-llama/llama-3.3-70b-instruct:free",
       visionModel: "meta-llama/llama-3.3-70b-instruct:free",
-      codeModel: "nousresearch/hermes-3-llama-3.1-405b:free",
+      codeModel: "deepseek/deepseek-chat-v3-0324:free",
       provider: "openrouter",
     };
   }
