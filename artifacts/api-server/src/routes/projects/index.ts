@@ -475,7 +475,7 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
       const runGeneration = async (genClient: typeof aiClient, model: string) => {
         const stream = await genClient.chat.completions.create({
           model,
-          max_tokens: 8000,
+          max_tokens: 16000,
           temperature: 0.2,
           messages: codeMessages as Parameters<typeof genClient.chat.completions.create>[0]["messages"],
           stream: true,
