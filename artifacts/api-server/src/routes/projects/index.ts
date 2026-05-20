@@ -362,28 +362,44 @@ Antworte NUR mit dem Plan — strukturiert, präzise, max. 400 Wörter.`,
             : [{ role: "user" as const, content: prompt }]),
         ];
 
-        try {
-          const planStream = await aiClient.chat.completions.create({
-            model: planModel,
-            max_tokens: 800,
-            temperature: 0.3,
-            messages: planningMessages as Parameters<typeof aiClient.chat.completions.create>[0]["messages"],
-            stream: true,
-          });
-          for await (const chunk of planStream) {
-            const delta = chunk.choices[0]?.delta?.content;
-            if (delta) implementationPlan += delta;
+        // Try planning with multiple models — 429 on first → silently retry next
+        const planModelsToTry = [planModel];
+        if (provider === "openrouter") {
+          // Add fallback planning models so rate limits don't skip planning
+          for (const m of [
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "google/gemini-2.0-flash-exp:free",
+            "nousresearch/hermes-3-llama-3.1-405b:free",
+          ]) {
+            if (m !== planModel) planModelsToTry.push(m);
           }
-          // Strip think-tags from planning response too
-          implementationPlan = implementationPlan
-            .replace(/<think>[\s\S]*?<\/think>/gi, "")
-            .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
-            .replace(/<think>[\s\S]*$/i, "")
-            .trim();
-          log.info({ provider, planModel, genModel }, "Planning step completed");
-        } catch {
-          // Planning step failed — continue without plan (still better than nothing)
-          implementationPlan = "";
+        }
+        for (const tryModel of planModelsToTry) {
+          try {
+            const planStream = await aiClient.chat.completions.create({
+              model: tryModel,
+              max_tokens: 800,
+              temperature: 0.3,
+              messages: planningMessages as Parameters<typeof aiClient.chat.completions.create>[0]["messages"],
+              stream: true,
+            });
+            let planText = "";
+            for await (const chunk of planStream) {
+              const delta = chunk.choices[0]?.delta?.content;
+              if (delta) planText += delta;
+            }
+            implementationPlan = planText
+              .replace(/<think>[\s\S]*?<\/think>/gi, "")
+              .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+              .replace(/<think>[\s\S]*$/i, "")
+              .trim();
+            log.info({ provider, planModel: tryModel, genModel }, "Planning step completed");
+            break; // success — stop trying
+          } catch (planErr) {
+            const planErrStatus = (planErr as { status?: number })?.status;
+            log.warn({ model: tryModel, status: planErrStatus }, "Planning model failed, trying next");
+            // Continue to next model
+          }
         }
       }
 
@@ -506,9 +522,28 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
       // Primary provider first
       fallbackChain.push({ client: aiClient, model: genModel, name: provider, isPollinations: provider === "pollinations" });
 
-      // Add remaining providers with keys as fallbacks (skip primary)
+      // ── OpenRouter multi-model fallback ─────────────────────────────────────
+      // When the primary OpenRouter model is rate-limited (429), automatically
+      // try the other top-tier free models before falling back to Pollinations.
+      // This prevents 429 errors from ever reaching the user.
+      const activeOpenRouterKey = userKeys.openrouterApiKey ?? process.env["OPENROUTER_API_KEY"] ?? null;
+      if (activeOpenRouterKey && provider === "openrouter") {
+        const orClient = aiClient; // reuse — same client, different models
+        // Best free code models on OpenRouter, ordered by quality:
+        const orFallbackModels = [
+          "deepseek/deepseek-r1:free",                    // DeepSeek R1 — reasoning, excellent code
+          "qwen/qwen3-235b-a22b:free",                    // Qwen3 235B — top code model
+          "google/gemini-2.0-flash-exp:free",             // Gemini Flash — fast, high quality
+          "nousresearch/hermes-3-llama-3.1-405b:free",   // Hermes 405B — reliable fallback
+          "meta-llama/llama-3.3-70b-instruct:free",      // Llama 3.3 70B — last resort free
+        ].filter(m => m !== genModel); // skip if it's already the primary
+        for (const m of orFallbackModels) {
+          fallbackChain.push({ client: orClient, model: m, name: "openrouter", isPollinations: false });
+        }
+      }
+
+      // Add remaining providers with personal API keys as fallbacks (skip primary)
       const candidateFallbacks = [
-        { keyVal: userKeys.openrouterApiKey, keyName: "openrouter" as const },
         { keyVal: userKeys.groqApiKey, keyName: "groq" as const },
         { keyVal: userKeys.geminiApiKey, keyName: "gemini" as const },
         { keyVal: userKeys.openaiApiKey, keyName: "openai" as const },
@@ -516,10 +551,10 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
         { keyVal: userKeys.mistralApiKey, keyName: "mistral" as const },
       ];
       for (const cand of candidateFallbacks) {
-        if (cand.keyName === provider || !cand.keyVal) continue;
+        if (!cand.keyVal) continue;
         try {
           const partialKeys: typeof userKeys = {
-            openrouterApiKey: cand.keyName === "openrouter" ? cand.keyVal : null,
+            openrouterApiKey: null,
             groqApiKey: cand.keyName === "groq" ? cand.keyVal : null,
             geminiApiKey: cand.keyName === "gemini" ? cand.keyVal : null,
             openaiApiKey: cand.keyName === "openai" ? cand.keyVal : null,
@@ -530,16 +565,14 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
           fallbackChain.push({ client: fb.client, model: fb.codeModel, name: cand.keyName, isPollinations: false });
         } catch { /* skip */ }
       }
-      // Always add Pollinations as last resort — three models for reliability
+      // Pollinations as absolute last resort — only reached if ALL OpenRouter models fail
       const support = getSupportClient();
       if (provider !== "pollinations") {
-        for (const polModel of ["openai", "mistral", "deepseek"] as const) {
+        for (const polModel of ["openai", "mistral"] as const) {
           fallbackChain.push({ client: support.client, model: polModel, name: "pollinations", isPollinations: true });
         }
       } else {
-        // Primary IS pollinations — still try all three models
         fallbackChain.push({ client: support.client, model: "mistral", name: "pollinations", isPollinations: true });
-        fallbackChain.push({ client: support.client, model: "deepseek", name: "pollinations", isPollinations: true });
       }
 
       const runGeneration = async (entry: FallbackEntry): Promise<string> => {
