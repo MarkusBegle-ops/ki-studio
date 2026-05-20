@@ -430,15 +430,48 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
       let fullResponse = "";
       let providerNote = ""; // Set when auto-fallback fires — shown to the user in chat
 
-      const runGeneration = async (
-        genClient: typeof aiClient,
-        model: string,
-      ) => {
+      type FallbackEntry = { client: typeof aiClient; model: string; name: string };
+      const fallbackChain: FallbackEntry[] = [];
+
+      // Primary provider first
+      fallbackChain.push({ client: aiClient, model: genModel, name: provider });
+
+      // Add remaining providers with keys as fallbacks (skip primary)
+      const candidateFallbacks = [
+        { keyVal: userKeys.openrouterApiKey, keyName: "openrouter" as const },
+        { keyVal: userKeys.groqApiKey, keyName: "groq" as const },
+        { keyVal: userKeys.geminiApiKey, keyName: "gemini" as const },
+        { keyVal: userKeys.openaiApiKey, keyName: "openai" as const },
+        { keyVal: userKeys.nvidiaApiKey, keyName: "nvidia" as const },
+        { keyVal: userKeys.mistralApiKey, keyName: "mistral" as const },
+      ];
+      for (const cand of candidateFallbacks) {
+        if (cand.keyName === provider || !cand.keyVal) continue;
+        try {
+          const partialKeys: typeof userKeys = {
+            openrouterApiKey: cand.keyName === "openrouter" ? cand.keyVal : null,
+            groqApiKey: cand.keyName === "groq" ? cand.keyVal : null,
+            geminiApiKey: cand.keyName === "gemini" ? cand.keyVal : null,
+            openaiApiKey: cand.keyName === "openai" ? cand.keyVal : null,
+            nvidiaApiKey: cand.keyName === "nvidia" ? cand.keyVal : null,
+            mistralApiKey: cand.keyName === "mistral" ? cand.keyVal : null,
+          };
+          const fb = getAIClient(partialKeys);
+          fallbackChain.push({ client: fb.client, model: fb.codeModel, name: cand.keyName });
+        } catch { /* skip */ }
+      }
+      // Always add Pollinations as last resort
+      const support = getSupportClient();
+      if (provider !== "pollinations") {
+        fallbackChain.push({ client: support.client, model: support.codeReviewModel, name: "pollinations" });
+      }
+
+      const runGeneration = async (genClient: typeof aiClient, model: string) => {
         const stream = await genClient.chat.completions.create({
           model,
-          max_tokens: 16000,
+          max_tokens: 8000,
           temperature: 0.2,
-          messages: codeMessages as Parameters<typeof aiClient.chat.completions.create>[0]["messages"],
+          messages: codeMessages as Parameters<typeof genClient.chat.completions.create>[0]["messages"],
           stream: true,
         });
         let text = "";
@@ -446,33 +479,29 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
           const delta = chunk.choices[0]?.delta?.content;
           if (delta) text += delta;
         }
+        if (!text.trim()) throw new Error(`Provider ${model} returned empty response`);
         return text;
       };
 
-      try {
-        fullResponse = await runGeneration(aiClient, genModel);
-      } catch (genErr: unknown) {
-        const errStatus = (genErr as { status?: number })?.status;
-        const isRetryable = errStatus === 429 || errStatus === 503 || errStatus === 500 || errStatus === 502;
-        if (!isRetryable) throw genErr;
-
-        log.warn({ provider, genModel, errStatus }, "Provider error — auto-retry with Pollinations fallback");
-
-        if (errStatus === 429) {
-          providerNote = `⚠️ **Anbieter-Limit erreicht (429):** Dein KI-Anbieter hat die Anfrage abgelehnt weil zu viele Anfragen in kurzer Zeit gesendet wurden. Ich habe automatisch auf den Backup-Anbieter umgeschaltet und den Code neu generiert. Warte kurz, bevor du den Hauptanbieter erneut nutzt.`;
-        } else {
-          providerNote = `⚠️ **Anbieter-Fehler (${errStatus}):** Dein KI-Anbieter hat einen temporären Fehler gemeldet. Ich habe automatisch auf den Backup-Anbieter umgeschaltet.`;
-        }
-
-        // Fallback: Pollinations ist immer verfügbar (kein API-Key nötig)
-        const { client: fallbackClient, codeReviewModel: fallbackModel } = getSupportClient();
+      let lastError: unknown = null;
+      for (const entry of fallbackChain) {
         try {
-          fullResponse = await runGeneration(fallbackClient, fallbackModel);
-        } catch (fallbackErr) {
-          // Even Pollinations failed — save the original error
-          log.error({ err: fallbackErr }, "Pollinations fallback also failed");
-          throw genErr;
+          log.info({ provider: entry.name, model: entry.model }, "Attempting generation");
+          fullResponse = await runGeneration(entry.client, entry.model);
+          if (entry.name !== provider) {
+            providerNote = `⚠️ **Automatischer Anbieterwechsel:** Primärer Anbieter (${provider}) schlug fehl — erfolgreich mit **${entry.name}** generiert.`;
+          }
+          break;
+        } catch (err: unknown) {
+          const errStatus = (err as { status?: number })?.status;
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.warn({ provider: entry.name, model: entry.model, errStatus, errMsg }, "Provider failed, trying next");
+          lastError = err;
         }
+      }
+
+      if (!fullResponse && lastError) {
+        throw lastError;
       }
 
       // Robust HTML extraction — handles code blocks, <think> tags, leading text, any wrapping
