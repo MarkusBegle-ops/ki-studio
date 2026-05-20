@@ -802,7 +802,7 @@ export default function ProjectEditor() {
                   )}
                 </div>
                 <p className="text-[10px] text-muted-foreground/30 pr-1">
-                  {isGenerating ? "Generierung läuft im Hintergrund…" : "Shift + Enter für neue Zeile"}
+                  {isGenerating ? "Generierung läuft im Hintergrund…" : "Enter senden · Shift+Enter neue Zeile"}
                 </p>
               </div>
             </div>
@@ -837,14 +837,56 @@ export default function ProjectEditor() {
             {/* Preview content */}
             <div className="flex-1 relative overflow-hidden">
               {isGenerating ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
-                  <div className="w-16 h-16 rounded-2xl bg-primary/5 border border-primary/10 flex items-center justify-center mb-5">
-                    <Loader2 className="w-7 h-7 text-primary/40 animate-spin" />
+                <div className="absolute inset-0 flex flex-col bg-[#0d1117] overflow-hidden">
+                  {/* Fake browser toolbar */}
+                  <div className="h-8 bg-[#161b22] border-b border-white/5 flex items-center px-3 gap-2 shrink-0">
+                    <div className="flex gap-1">
+                      <div className="w-2 h-2 rounded-full bg-white/10" />
+                      <div className="w-2 h-2 rounded-full bg-white/10" />
+                      <div className="w-2 h-2 rounded-full bg-white/10" />
+                    </div>
+                    <div className="flex-1 mx-2 h-3.5 bg-white/5 rounded-full animate-pulse" />
                   </div>
-                  <p className="text-base font-medium text-foreground/50 mb-2">KI generiert deinen Code…</p>
-                  <p className="text-sm text-muted-foreground/40 max-w-xs leading-relaxed">
-                    Du kannst den Tab schließen — die Generierung läuft im Hintergrund weiter.
-                  </p>
+                  {/* Animated code skeleton — simulates the AI writing HTML */}
+                  <div className="flex-1 p-5 overflow-hidden relative">
+                    {/* Header skeleton */}
+                    <div className="h-10 bg-white/4 rounded-lg mb-4 animate-pulse" style={{ animationDelay: "0ms" }} />
+                    <div className="grid grid-cols-3 gap-3 mb-5">
+                      {[0,1,2].map(i => (
+                        <div key={i} className="h-20 bg-white/4 rounded-xl animate-pulse" style={{ animationDelay: `${i * 80}ms` }} />
+                      ))}
+                    </div>
+                    <div className="space-y-2.5 mb-5">
+                      {[100,75,90,60,85].map((w, i) => (
+                        <div key={i} className="h-2 bg-white/4 rounded-full animate-pulse" style={{ width: `${w}%`, animationDelay: `${i * 60}ms` }} />
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mb-5">
+                      <div className="h-32 bg-white/4 rounded-xl animate-pulse" style={{ animationDelay: "100ms" }} />
+                      <div className="space-y-2 pt-1">
+                        {[90,70,80,65,75].map((w, i) => (
+                          <div key={i} className="h-2 bg-white/4 rounded-full animate-pulse" style={{ width: `${w}%`, animationDelay: `${i * 50 + 150}ms` }} />
+                        ))}
+                        <div className="h-7 bg-primary/10 rounded-lg mt-3 animate-pulse w-24" style={{ animationDelay: "300ms" }} />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {[100,80,95,55].map((w, i) => (
+                        <div key={i} className="h-2 bg-white/4 rounded-full animate-pulse" style={{ width: `${w}%`, animationDelay: `${i * 60 + 200}ms` }} />
+                      ))}
+                    </div>
+                    {/* Shimmer overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-primary/3 to-transparent animate-[shimmer_2s_ease-in-out_infinite]" style={{ backgroundSize: "200% 100%" }} />
+                  </div>
+                  {/* Status bar at bottom */}
+                  <div className="h-8 shrink-0 border-t border-white/5 bg-[#161b22] flex items-center justify-center gap-2 px-4">
+                    <div className="flex gap-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
+                    </div>
+                    <span className="text-[11px] text-muted-foreground/60 font-medium">KI generiert deine App — bitte warten…</span>
+                  </div>
                 </div>
               ) : generationStatus === "error" && !project.htmlCode ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
