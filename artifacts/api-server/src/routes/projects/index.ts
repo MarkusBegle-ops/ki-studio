@@ -865,21 +865,41 @@ OUTPUT: Nur reines HTML, direkt mit <!DOCTYPE html> beginnend. KEIN Markdown. KE
         return text;
       };
 
+      const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+      const is429 = (err: unknown) => {
+        const status = (err as { status?: number })?.status;
+        const msg = err instanceof Error ? err.message : String(err);
+        return status === 429 || msg.includes("429") || msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("too many requests");
+      };
+
       let lastError: unknown = null;
       for (const entry of fallbackChain) {
-        try {
-          log.info({ provider: entry.name, model: entry.model }, "Attempting generation");
-          fullResponse = await runGeneration(entry);
-          if (entry.name !== provider) {
-            providerNote = `⚠️ **Automatischer Anbieterwechsel:** Primärer Anbieter (${provider}) schlug fehl — erfolgreich mit **${entry.name}** generiert.`;
+        let attempts = 0;
+        const maxRetries = is429(lastError) ? 1 : 0; // retry once with backoff on 429 from previous
+        while (attempts <= maxRetries) {
+          try {
+            if (attempts > 0) {
+              // Brief backoff before retry (2s first retry, 5s second)
+              await sleep(attempts * 2000);
+            }
+            log.info({ provider: entry.name, model: entry.model, attempt: attempts + 1 }, "Attempting generation");
+            fullResponse = await runGeneration(entry);
+            if (entry.name !== provider || entry.model !== genModel) {
+              providerNote = `⚠️ **Automatischer Anbieterwechsel:** Primärer Anbieter war ausgelastet — erfolgreich mit **${entry.model}** generiert.`;
+            }
+            lastError = null;
+            break;
+          } catch (err: unknown) {
+            const errStatus = (err as { status?: number })?.status;
+            const errMsg = err instanceof Error ? err.message : String(err);
+            log.warn({ provider: entry.name, model: entry.model, errStatus, errMsg, attempt: attempts + 1 }, "Provider attempt failed");
+            lastError = err;
+            if (!is429(err)) break; // non-429 errors: skip retry, move to next model immediately
+            attempts++;
           }
-          break;
-        } catch (err: unknown) {
-          const errStatus = (err as { status?: number })?.status;
-          const errMsg = err instanceof Error ? err.message : String(err);
-          log.warn({ provider: entry.name, model: entry.model, errStatus, errMsg }, "Provider failed, trying next");
-          lastError = err;
         }
+        if (fullResponse) break; // success — stop trying fallbacks
       }
 
       if (!fullResponse && lastError) {
@@ -1031,9 +1051,23 @@ OUTPUT: Nur reines HTML, direkt startend mit <!DOCTYPE html>, KEIN Markdown, KEI
 
     } catch (err) {
       log.error({ err }, "Background generation error");
+      const rawMsg = String(err instanceof Error ? err.message : err);
+      // Translate provider errors into friendly German messages
+      let userMsg: string;
+      if (rawMsg.includes("429") || rawMsg.toLowerCase().includes("rate limit") || rawMsg.toLowerCase().includes("too many requests")) {
+        userMsg = "Alle KI-Anbieter sind gerade ausgelastet (Rate-Limit). Bitte in 1-2 Minuten erneut versuchen.";
+      } else if (rawMsg.toLowerCase().includes("timeout") || rawMsg.toLowerCase().includes("abort") || rawMsg.toLowerCase().includes("timed out")) {
+        userMsg = "Die KI hat zu lange gebraucht (Timeout). Bitte erneut versuchen — komplexe Apps brauchen manchmal einen zweiten Versuch.";
+      } else if (rawMsg.toLowerCase().includes("empty response") || rawMsg.toLowerCase().includes("returned empty")) {
+        userMsg = "Die KI hat eine leere Antwort zurückgegeben. Bitte erneut versuchen.";
+      } else if (rawMsg.toLowerCase().includes("network") || rawMsg.toLowerCase().includes("econnreset") || rawMsg.toLowerCase().includes("fetch")) {
+        userMsg = "Netzwerkfehler beim KI-Anbieter. Bitte erneut versuchen.";
+      } else {
+        userMsg = `Generierung fehlgeschlagen: ${rawMsg.slice(0, 200)}`;
+      }
       await db
         .update(projectsTable)
-        .set({ generationStatus: "error", generationError: String(err instanceof Error ? err.message : err), updatedAt: new Date() })
+        .set({ generationStatus: "error", generationError: userMsg, updatedAt: new Date() })
         .where(eq(projectsTable.id, projectId));
     }
   })();
