@@ -382,7 +382,7 @@ export default function Home() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute top-3 right-10 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/40 hover:text-primary hover:bg-primary/10 z-10"
+                        className="absolute top-3 right-10 h-7 w-7 opacity-40 hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary hover:bg-primary/10 z-10"
                         onClick={(e) => startRename(project.id, project.title, e)}
                         data-testid={`button-rename-project-${project.id}`}
                       >
@@ -397,7 +397,7 @@ export default function Home() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="absolute top-3 right-3 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 z-10"
+                            className="absolute top-3 right-3 h-7 w-7 opacity-40 hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10 z-10"
                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
                             data-testid={`button-delete-project-${project.id}`}
                           >
