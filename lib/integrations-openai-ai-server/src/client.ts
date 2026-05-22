@@ -125,26 +125,6 @@ export function getAIClient(keys: UserApiKeys): AIClient {
     };
   }
 
-  // Replit AI Integration — automatisch bereitgestellt, kein eigener Key nötig
-  const replitOrBaseUrl = process.env["AI_INTEGRATIONS_OPENROUTER_BASE_URL"];
-  const replitOrApiKey = process.env["AI_INTEGRATIONS_OPENROUTER_API_KEY"];
-  if (replitOrBaseUrl && replitOrApiKey) {
-    return {
-      client: new OpenAI({
-        apiKey: replitOrApiKey,
-        baseURL: replitOrBaseUrl,
-        defaultHeaders: {
-          "HTTP-Referer": "https://ki-studio.app",
-          "X-Title": "KI Studio",
-        },
-      }),
-      textModel: "meta-llama/llama-3.3-70b-instruct:free",
-      visionModel: "meta-llama/llama-3.3-70b-instruct:free",
-      codeModel: "deepseek/deepseek-chat-v3-0324:free",
-      provider: "openrouter",
-    };
-  }
-
   // Pollinations AI — kein API-Key nötig, kostenlos
   // openai = GPT-4o equivalent — das einzige zuverlässige Modell auf der Legacy-API
   return {
