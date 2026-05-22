@@ -393,8 +393,9 @@ Antworte NUR mit diesem Plan. Maximal 600 Wörter. Keine Code-Snippets, keine HT
           // Add fallback planning models so rate limits don't skip planning
           for (const m of [
             "meta-llama/llama-3.3-70b-instruct:free",
-            "google/gemini-2.0-flash-exp:free",
+            "deepseek/deepseek-r1:free",
             "nousresearch/hermes-3-llama-3.1-405b:free",
+            "qwen/qwen3-235b-a22b:free",
           ]) {
             if (m !== planModel) planModelsToTry.push(m);
           }
@@ -744,7 +745,6 @@ OUTPUT: Nur reines HTML, direkt mit <!DOCTYPE html> beginnend. KEIN Markdown. KE
         const orFallbackModels = [
           "deepseek/deepseek-r1:free",                    // DeepSeek R1 — reasoning, excellent code
           "qwen/qwen3-235b-a22b:free",                    // Qwen3 235B — top code model
-          "google/gemini-2.0-flash-exp:free",             // Gemini Flash — fast, high quality
           "nousresearch/hermes-3-llama-3.1-405b:free",   // Hermes 405B — reliable fallback
           "meta-llama/llama-3.3-70b-instruct:free",      // Llama 3.3 70B — last resort free
         ].filter(m => m !== genModel); // skip if it's already the primary
@@ -776,14 +776,10 @@ OUTPUT: Nur reines HTML, direkt mit <!DOCTYPE html> beginnend. KEIN Markdown. KE
           fallbackChain.push({ client: fb.client, model: fb.codeModel, name: cand.keyName, isPollinations: false });
         } catch { /* skip */ }
       }
-      // Pollinations as absolute last resort — only reached if ALL OpenRouter models fail
+      // Pollinations as absolute last resort — only "openai" / "openai-fast" work (same model)
       const support = getSupportClient();
       if (provider !== "pollinations") {
-        for (const polModel of ["openai", "mistral"] as const) {
-          fallbackChain.push({ client: support.client, model: polModel, name: "pollinations", isPollinations: true });
-        }
-      } else {
-        fallbackChain.push({ client: support.client, model: "mistral", name: "pollinations", isPollinations: true });
+        fallbackChain.push({ client: support.client, model: "openai", name: "pollinations", isPollinations: true });
       }
 
       const runGeneration = async (entry: FallbackEntry): Promise<string> => {
