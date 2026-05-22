@@ -71,9 +71,23 @@ router.post("/admin/chat", async (req: Request, res: Response) => {
     nvidiaApiKey: user?.nvidiaApiKey ?? null,
   };
 
-  // getAIClient handles the full priority chain:
-  // user keys → server OPENROUTER_API_KEY (Render) → Replit AI Integration → Pollinations
-  const { client: aiClientObj, textModel } = getAIClient(userKeys);
+  // Build fallback chain: primary model first, then multiple OpenRouter free models
+  const primary = getAIClient(userKeys);
+  type FbEntry = { client: typeof primary.client; model: string };
+  const fallbackChain: FbEntry[] = [{ client: primary.client, model: primary.textModel }];
+
+  // If using OpenRouter (server key or user key), add free model fallbacks
+  const orKey = userKeys.openrouterApiKey ?? process.env["OPENROUTER_API_KEY"] ?? process.env["AI_INTEGRATIONS_OPENROUTER_BASE_URL"];
+  if (orKey && primary.provider === "openrouter") {
+    for (const m of [
+      "meta-llama/llama-3.3-70b-instruct:free",
+      "google/gemini-2.0-flash-exp:free",
+      "qwen/qwen3-235b-a22b:free",
+      "nousresearch/hermes-3-llama-3.1-405b:free",
+    ]) {
+      if (m !== primary.textModel) fallbackChain.push({ client: primary.client, model: m });
+    }
+  }
 
   const sourceFiles = await readSourceFiles();
   const fileContext = sourceFiles.map(f =>
@@ -123,22 +137,35 @@ ${fileContext}`;
     { role: "user" as const, content: message },
   ];
 
-  try {
-    const completion = await aiClientObj.chat.completions.create({
-      model: textModel,
-      messages,
-      max_tokens: 8000,
-    });
-    const content = completion.choices[0]?.message?.content ?? "";
-    res.json({ content });
-  } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "KI-Fehler";
-    const isRateLimit = errMsg.includes("429") || errMsg.toLowerCase().includes("rate limit");
-    const userMsg = isRateLimit
-      ? "KI momentan ausgelastet (Rate-Limit). Bitte in 1-2 Minuten erneut versuchen."
-      : `KI-Fehler: ${errMsg.slice(0, 200)}`;
-    res.status(502).json({ error: userMsg });
+  const is429 = (e: unknown) => {
+    const s = (e as { status?: number })?.status;
+    const msg = e instanceof Error ? e.message : String(e);
+    return s === 429 || msg.includes("429") || msg.toLowerCase().includes("rate limit");
+  };
+
+  let lastErr: unknown = null;
+  for (const entry of fallbackChain) {
+    try {
+      const completion = await entry.client.chat.completions.create({
+        model: entry.model,
+        messages,
+        max_tokens: 8000,
+      });
+      const content = completion.choices[0]?.message?.content ?? "";
+      res.json({ content });
+      return;
+    } catch (err: unknown) {
+      lastErr = err;
+      if (!is429(err)) break; // non-429: don't try more models
+      // 429: try next model in chain
+    }
   }
+
+  const errMsg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  const userMsg = is429(lastErr)
+    ? "KI momentan ausgelastet — alle Modelle sind gerade belegt. Bitte in 1-2 Minuten erneut versuchen."
+    : `KI-Fehler: ${errMsg.slice(0, 200)}`;
+  res.status(502).json({ error: userMsg });
 });
 
 router.post("/admin/apply", async (req: Request, res: Response) => {
