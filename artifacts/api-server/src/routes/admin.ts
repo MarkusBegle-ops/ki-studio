@@ -80,8 +80,8 @@ router.post("/admin/chat", async (req: Request, res: Response) => {
   const orKey = userKeys.openrouterApiKey ?? process.env["OPENROUTER_API_KEY"] ?? process.env["AI_INTEGRATIONS_OPENROUTER_BASE_URL"];
   if (orKey && primary.provider === "openrouter") {
     for (const m of [
+      "deepseek/deepseek-r1:free",
       "meta-llama/llama-3.3-70b-instruct:free",
-      "google/gemini-2.0-flash-exp:free",
       "qwen/qwen3-235b-a22b:free",
       "nousresearch/hermes-3-llama-3.1-405b:free",
     ]) {
@@ -137,6 +137,15 @@ ${fileContext}`;
     { role: "user" as const, content: message },
   ];
 
+  const isRetryable = (e: unknown) => {
+    const s = (e as { status?: number })?.status;
+    const msg = e instanceof Error ? e.message : String(e);
+    // Retry on rate-limit (429) OR model-not-found (404) — both mean "try next model"
+    return s === 429 || s === 404
+      || msg.includes("429") || msg.includes("404")
+      || msg.toLowerCase().includes("rate limit")
+      || msg.toLowerCase().includes("no endpoints found");
+  };
   const is429 = (e: unknown) => {
     const s = (e as { status?: number })?.status;
     const msg = e instanceof Error ? e.message : String(e);
@@ -156,8 +165,8 @@ ${fileContext}`;
       return;
     } catch (err: unknown) {
       lastErr = err;
-      if (!is429(err)) break; // non-429: don't try more models
-      // 429: try next model in chain
+      if (!isRetryable(err)) break; // hard error: stop trying
+      // 429 or 404: try next model in chain
     }
   }
 
