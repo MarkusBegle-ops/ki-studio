@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import fs from "fs/promises";
 import path from "path";
-import { getAIClient } from "@workspace/integrations-openai-ai-server";
+import { getAIClient, getSupportClient } from "@workspace/integrations-openai-ai-server";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
@@ -16,20 +16,13 @@ function isAdmin(req: Request): boolean {
   return req.user.email === adminEmail;
 }
 
+// Reduced file list — only the most critical files to keep token count low
 const KEY_FILES = [
   "artifacts/ki-studio/src/App.tsx",
-  "artifacts/ki-studio/src/pages/home.tsx",
-  "artifacts/ki-studio/src/pages/new-project.tsx",
   "artifacts/ki-studio/src/pages/project-editor.tsx",
-  "artifacts/ki-studio/src/pages/templates.tsx",
-  "artifacts/ki-studio/src/pages/settings.tsx",
-  "artifacts/ki-studio/src/components/layout/app-layout.tsx",
   "artifacts/ki-studio/src/components/admin-panel.tsx",
-  "artifacts/api-server/src/routes/auth.ts",
-  "artifacts/api-server/src/routes/conversations.ts",
   "artifacts/api-server/src/routes/projects/index.ts",
   "artifacts/api-server/src/routes/admin.ts",
-  "artifacts/api-server/src/index.ts",
   "lib/db/src/schema/projects.ts",
   "lib/db/src/schema/auth.ts",
 ];
@@ -88,10 +81,14 @@ router.post("/admin/chat", async (req: Request, res: Response) => {
       if (m !== primary.textModel) fallbackChain.push({ client: primary.client, model: m });
     }
   }
+  // Always add Pollinations as final fallback — unlimited, no key needed
+  const support = getSupportClient();
+  fallbackChain.push({ client: support.client, model: support.reviewModel });
 
   const sourceFiles = await readSourceFiles();
+  // Limit each file to 1500 chars to keep total token count manageable
   const fileContext = sourceFiles.map(f =>
-    `[DATEI: ${f.path}]\n\`\`\`tsx\n${f.content.length > 4000 ? f.content.slice(0, 4000) + "\n... (gekürzt)" : f.content}\n\`\`\``
+    `[DATEI: ${f.path}]\n\`\`\`tsx\n${f.content.length > 1500 ? f.content.slice(0, 1500) + "\n... (gekürzt)" : f.content}\n\`\`\``
   ).join("\n\n---\n\n");
 
   const systemPrompt = `Du bist ein Senior Full-Stack-Entwickler und Code-Reviewer für KI Studio — eine React+Vite+TypeScript SPA mit Express 5 Backend, Drizzle ORM, PostgreSQL und shadcn/ui Komponenten.
