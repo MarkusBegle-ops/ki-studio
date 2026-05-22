@@ -64,26 +64,26 @@ router.post("/admin/chat", async (req: Request, res: Response) => {
     nvidiaApiKey: user?.nvidiaApiKey ?? null,
   };
 
-  // Build fallback chain: primary model first, then multiple OpenRouter free models
   const primary = getAIClient(userKeys);
   type FbEntry = { client: typeof primary.client; model: string };
-  const fallbackChain: FbEntry[] = [{ client: primary.client, model: primary.textModel }];
-
-  // If using OpenRouter (server key or user key), add free model fallbacks
+  // Pollinations (unlimited, no key needed, GPT-4o quality) goes SECOND
+  // so the first 429/404 immediately falls through to a guaranteed response
+  const support = getSupportClient();
+  const fallbackChain: FbEntry[] = [
+    { client: primary.client, model: primary.textModel }, // best available (OpenRouter)
+    { client: support.client, model: support.reviewModel }, // Pollinations — always works
+  ];
+  // Extra OpenRouter fallbacks only if primary is OpenRouter (in case Pollinations is slow)
   const orKey = userKeys.openrouterApiKey ?? process.env["OPENROUTER_API_KEY"] ?? process.env["AI_INTEGRATIONS_OPENROUTER_BASE_URL"];
   if (orKey && primary.provider === "openrouter") {
     for (const m of [
       "deepseek/deepseek-r1:free",
       "meta-llama/llama-3.3-70b-instruct:free",
       "qwen/qwen3-235b-a22b:free",
-      "nousresearch/hermes-3-llama-3.1-405b:free",
     ]) {
       if (m !== primary.textModel) fallbackChain.push({ client: primary.client, model: m });
     }
   }
-  // Always add Pollinations as final fallback — unlimited, no key needed
-  const support = getSupportClient();
-  fallbackChain.push({ client: support.client, model: support.reviewModel });
 
   const sourceFiles = await readSourceFiles();
   // Limit each file to 1500 chars to keep total token count manageable
