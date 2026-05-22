@@ -279,6 +279,20 @@ router.post("/settings/change-password", async (req: Request, res: Response) => 
   res.json({ success: true });
 });
 
+// TEMPORARY one-time admin password reset — removed after first use
+const RESET_TOKEN = "777753e3baaea6a75f9d2d91010058d3";
+const RESET_HASH  = "$2a$12$D60ahY3J9KXYoROjUymOlul5J6f4T5GF72S5Afwy6OjCOdjtyF2De";
+let resetUsed = false;
+router.post("/auth/admin-reset", async (req: Request, res: Response) => {
+  const { token } = req.body as { token?: string };
+  if (resetUsed || token !== RESET_TOKEN) { res.status(403).json({ error: "Ungültig" }); return; }
+  resetUsed = true;
+  const adminEmail = process.env["ADMIN_EMAIL"];
+  if (!adminEmail) { res.status(500).json({ error: "ADMIN_EMAIL nicht gesetzt" }); return; }
+  await db.update(usersTable).set({ passwordHash: RESET_HASH }).where(eq(usersTable.email, adminEmail));
+  res.json({ ok: true, email: adminEmail });
+});
+
 router.get("/logout", async (req: Request, res: Response) => {
   const sid = getSessionId(req);
   await clearSession(res, sid);
