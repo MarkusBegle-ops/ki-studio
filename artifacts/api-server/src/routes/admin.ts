@@ -67,25 +67,18 @@ router.post("/admin/chat", async (req: Request, res: Response) => {
     nvidiaApiKey: user?.nvidiaApiKey ?? null,
   };
 
-  const primary = getAIClient(userKeys);
-  type FbEntry = { client: typeof primary.client; model: string };
-  // Pollinations (unlimited, no key needed, GPT-4o quality) goes SECOND
-  // so the first 429/404 immediately falls through to a guaranteed response
+  // Pollinations is PRIMARY for admin panel — unlimited, no rate limits, GPT-4o quality
+  // OpenRouter models only as upgrade fallbacks if user has their own key
   const support = getSupportClient();
+  type FbEntry = { client: typeof primary.client; model: string };
+  const primary = getAIClient(userKeys);
   const fallbackChain: FbEntry[] = [
-    { client: primary.client, model: primary.textModel }, // best available (OpenRouter)
-    { client: support.client, model: support.reviewModel }, // Pollinations — always works
+    { client: support.client, model: support.reviewModel }, // Pollinations — always works, no limits
   ];
-  // Extra OpenRouter fallbacks only if primary is OpenRouter (in case Pollinations is slow)
-  const orKey = userKeys.openrouterApiKey ?? process.env["OPENROUTER_API_KEY"] ?? process.env["AI_INTEGRATIONS_OPENROUTER_BASE_URL"];
-  if (orKey && primary.provider === "openrouter") {
-    for (const m of [
-      "deepseek/deepseek-r1:free",
-      "meta-llama/llama-3.3-70b-instruct:free",
-      "qwen/qwen3-235b-a22b:free",
-    ]) {
-      if (m !== primary.textModel) fallbackChain.push({ client: primary.client, model: m });
-    }
+  // If user has their own API key, also try their preferred model
+  const hasUserKey = !!(userKeys.openaiApiKey || userKeys.openrouterApiKey || userKeys.groqApiKey || userKeys.geminiApiKey);
+  if (hasUserKey) {
+    fallbackChain.unshift({ client: primary.client, model: primary.textModel });
   }
 
   const sourceFiles = await readSourceFiles();
