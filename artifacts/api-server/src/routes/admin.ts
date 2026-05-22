@@ -75,7 +75,7 @@ async function readSourceFiles(): Promise<{ path: string; content: string }[]> {
   return results.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-async function pushToGitHub(files: { path: string; content: string }[]): Promise<{ pushed: string[]; errors: string[] }> {
+async function pushToGitHub(files: { path: string; content: string; delete?: boolean }[]): Promise<{ pushed: string[]; errors: string[] }> {
   const token = process.env.GITHUB_TOKEN;
   const repo = process.env.GITHUB_REPO;
   if (!token || !repo) return { pushed: [], errors: ["GITHUB_TOKEN oder GITHUB_REPO nicht gesetzt"] };
@@ -89,22 +89,31 @@ async function pushToGitHub(files: { path: string; content: string }[]): Promise
         headers: { Authorization: `token ${token}`, Accept: "application/vnd.github.v3+json" },
       });
       const getData = await getRes.json() as { sha?: string };
-      const body: Record<string, string> = {
-        message: `admin: update ${file.path}`,
-        content: Buffer.from(file.content).toString("base64"),
-      };
-      if (getData.sha) body.sha = getData.sha;
-      const putRes = await fetch(`https://api.github.com/repos/${repo}/contents/${file.path}`, {
-        method: "PUT",
-        headers: { Authorization: `token ${token}`, "Content-Type": "application/json", Accept: "application/vnd.github.v3+json" },
-        body: JSON.stringify(body),
-      });
-      if (putRes.status === 200 || putRes.status === 201) {
-        pushed.push(file.path);
+
+      if (file.delete) {
+        if (!getData.sha) { errors.push(`GitHub: Datei nicht gefunden: ${file.path}`); continue; }
+        const delRes = await fetch(`https://api.github.com/repos/${repo}/contents/${file.path}`, {
+          method: "DELETE",
+          headers: { Authorization: `token ${token}`, "Content-Type": "application/json", Accept: "application/vnd.github.v3+json" },
+          body: JSON.stringify({ message: `admin: delete ${file.path}`, sha: getData.sha }),
+        });
+        if (delRes.status === 200) pushed.push(`DELETE:${file.path}`);
+        else errors.push(`GitHub Lösch-Fehler ${delRes.status}: ${file.path}`);
       } else {
-        errors.push(`GitHub Fehler ${putRes.status}: ${file.path}`);
+        const body: Record<string, string> = {
+          message: `admin: update ${file.path}`,
+          content: Buffer.from(file.content).toString("base64"),
+        };
+        if (getData.sha) body.sha = getData.sha;
+        const putRes = await fetch(`https://api.github.com/repos/${repo}/contents/${file.path}`, {
+          method: "PUT",
+          headers: { Authorization: `token ${token}`, "Content-Type": "application/json", Accept: "application/vnd.github.v3+json" },
+          body: JSON.stringify(body),
+        });
+        if (putRes.status === 200 || putRes.status === 201) pushed.push(file.path);
+        else errors.push(`GitHub Fehler ${putRes.status}: ${file.path}`);
       }
-    } catch (e) {
+    } catch {
       errors.push(`Netzwerk-Fehler: ${file.path}`);
     }
   }
@@ -200,12 +209,16 @@ Bei Fragen, Analyse, Bugs oder Verbesserungsvorschlägen:
 - Priorisiere: 🔴 Kritisch / 🟡 Mittel / 🟢 Nice-to-have
 - Kein __CHANGES__ Block bei reiner Analyse
 
-## 2. CODE-ÄNDERUNGEN
+## 2. CODE-ÄNDERUNGEN & DATEI-VERWALTUNG
+Du hast VOLLSTÄNDIGE Schreib- und Lösch-Berechtigung für den gesamten Quellcode.
+
 Wenn Markus eine Änderung möchte:
 - Erkläre kurz was du änderst und warum
 - Hänge Änderungen AM ENDE in GENAU diesem Format an:
-  __CHANGES__{"files":[{"path":"PFAD_VOM_REPO_ROOT","content":"VOLLSTÄNDIGER_DATEIINHALT"}]}__END__
-- IMMER den vollständigen Dateiinhalt — nie Ausschnitte oder "..." Platzhalter
+  __CHANGES__{"files":[{"path":"PFAD_VOM_REPO_ROOT","content":"VOLLSTÄNDIGER_DATEIINHALT"},{"path":"PFAD_ZU_LÖSCHENDER_DATEI","delete":true}]}__END__
+- Für neue/geänderte Dateien: IMMER vollständiger Dateiinhalt — nie Ausschnitte oder "..." Platzhalter
+- Für zu löschende Dateien: "delete": true statt "content" setzen
+- Du kannst Dateien erstellen, umbenennen (alt löschen + neu erstellen), und löschen
 - Erlaubte Pfade: artifacts/ki-studio/src/, artifacts/api-server/src/, lib/db/src/, lib/api-spec/
 - TypeScript-Typen korrekt, alle Imports vorhanden
 ${hasGitHub ? "- Änderungen werden automatisch auf GitHub gepusht → Render deployt danach automatisch" : "- Hinweis: GITHUB_TOKEN nicht gesetzt — Änderungen gelten nur lokal"}
@@ -273,7 +286,10 @@ ${fileContext}`;
 router.post("/admin/apply", async (req: Request, res: Response) => {
   if (!isAdmin(req)) { res.status(403).json({ error: "Zugriff verweigert" }); return; }
 
-  const { files, pushGitHub = true } = req.body as { files: { path: string; content: string }[]; pushGitHub?: boolean };
+  const { files, pushGitHub = true } = req.body as {
+    files: { path: string; content?: string; delete?: boolean }[];
+    pushGitHub?: boolean;
+  };
   if (!Array.isArray(files) || files.length === 0) {
     res.status(400).json({ error: "Keine Dateien angegeben" }); return;
   }
@@ -285,8 +301,9 @@ router.post("/admin/apply", async (req: Request, res: Response) => {
     "lib/api-spec/",
   ];
   const applied: string[] = [];
+  const deleted: string[] = [];
   const errors: string[] = [];
-  const toGitHub: { path: string; content: string }[] = [];
+  const toGitHub: { path: string; content: string; delete?: boolean }[] = [];
 
   for (const file of files) {
     const normalPath = path.normalize(file.path).replace(/\\/g, "/");
@@ -296,14 +313,28 @@ router.post("/admin/apply", async (req: Request, res: Response) => {
     if (!/\.(ts|tsx|css|json|yaml|md)$/.test(normalPath)) {
       errors.push(`Dateityp nicht erlaubt: ${file.path}`); continue;
     }
-    try {
-      const fullPath = path.join(REPO_ROOT, normalPath);
-      await fs.mkdir(path.dirname(fullPath), { recursive: true });
-      await fs.writeFile(fullPath, file.content, "utf-8");
-      applied.push(normalPath);
-      toGitHub.push({ path: normalPath, content: file.content });
-    } catch {
-      errors.push(`Schreibfehler: ${file.path}`);
+
+    if (file.delete) {
+      // Delete the file locally
+      try {
+        await fs.unlink(path.join(REPO_ROOT, normalPath));
+        deleted.push(normalPath);
+        toGitHub.push({ path: normalPath, content: "", delete: true });
+      } catch {
+        errors.push(`Löschfehler: ${file.path}`);
+      }
+    } else {
+      // Write/overwrite the file
+      if (!file.content) { errors.push(`Kein Inhalt für: ${file.path}`); continue; }
+      try {
+        const fullPath = path.join(REPO_ROOT, normalPath);
+        await fs.mkdir(path.dirname(fullPath), { recursive: true });
+        await fs.writeFile(fullPath, file.content, "utf-8");
+        applied.push(normalPath);
+        toGitHub.push({ path: normalPath, content: file.content });
+      } catch {
+        errors.push(`Schreibfehler: ${file.path}`);
+      }
     }
   }
 
@@ -312,7 +343,7 @@ router.post("/admin/apply", async (req: Request, res: Response) => {
     gitHubResult = await pushToGitHub(toGitHub);
   }
 
-  res.json({ applied, errors, gitHub: gitHubResult });
+  res.json({ applied, deleted, errors, gitHub: gitHubResult });
 });
 
 export default router;
