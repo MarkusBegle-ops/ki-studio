@@ -16,31 +16,99 @@ function isAdmin(req: Request): boolean {
   return req.user.email === adminEmail;
 }
 
-const KEY_FILES = [
-  "artifacts/ki-studio/src/App.tsx",
-  "artifacts/ki-studio/src/pages/home.tsx",
-  "artifacts/ki-studio/src/pages/project-editor.tsx",
-  "artifacts/ki-studio/src/pages/new-project.tsx",
-  "artifacts/ki-studio/src/components/admin-panel.tsx",
-  "artifacts/ki-studio/src/components/layout/app-layout.tsx",
-  "artifacts/api-server/src/routes/projects/index.ts",
-  "artifacts/api-server/src/routes/admin.ts",
-  "artifacts/api-server/src/index.ts",
-  "lib/db/src/schema/projects.ts",
-  "lib/db/src/schema/auth.ts",
+const SOURCE_DIRS = [
+  "artifacts/ki-studio/src",
+  "artifacts/api-server/src",
+  "lib/db/src",
+  "lib/api-spec",
 ];
 
+const ALWAYS_INCLUDE = [
+  "lib/db/src/schema/projects.ts",
+  "lib/db/src/schema/auth.ts",
+  "artifacts/api-server/src/index.ts",
+  "artifacts/api-server/src/routes/index.ts",
+];
+
+async function walkDir(dir: string, root: string): Promise<string[]> {
+  const results: string[] = [];
+  let names: string[];
+  try {
+    names = await fs.readdir(path.join(root, dir));
+  } catch {
+    return results;
+  }
+  for (const name of names) {
+    if (name === "node_modules" || name === "dist" || name === ".git") continue;
+    const rel = `${dir}/${name}`;
+    const fullPath = path.join(root, rel);
+    let stat: Awaited<ReturnType<typeof fs.stat>>;
+    try { stat = await fs.stat(fullPath); } catch { continue; }
+    if (stat.isDirectory()) {
+      const sub = await walkDir(rel, root);
+      results.push(...sub);
+    } else if (/\.(ts|tsx|css|json|yaml|md)$/.test(name) && !name.endsWith(".d.ts")) {
+      results.push(rel);
+    }
+  }
+  return results;
+}
+
 async function readSourceFiles(): Promise<{ path: string; content: string }[]> {
+  const allFiles = new Set<string>();
+
+  for (const dir of SOURCE_DIRS) {
+    const files = await walkDir(dir, REPO_ROOT);
+    for (const f of files) allFiles.add(f);
+  }
+  for (const f of ALWAYS_INCLUDE) allFiles.add(f);
+
   const results: { path: string; content: string }[] = [];
-  for (const file of KEY_FILES) {
+  for (const file of allFiles) {
     try {
       const content = await fs.readFile(path.join(REPO_ROOT, file), "utf-8");
       results.push({ path: file, content });
     } catch {
-      // skip missing files
+      // skip missing
     }
   }
-  return results;
+  return results.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+async function pushToGitHub(files: { path: string; content: string }[]): Promise<{ pushed: string[]; errors: string[] }> {
+  const token = process.env.GITHUB_TOKEN;
+  const repo = process.env.GITHUB_REPO;
+  if (!token || !repo) return { pushed: [], errors: ["GITHUB_TOKEN oder GITHUB_REPO nicht gesetzt"] };
+
+  const pushed: string[] = [];
+  const errors: string[] = [];
+
+  for (const file of files) {
+    try {
+      const getRes = await fetch(`https://api.github.com/repos/${repo}/contents/${file.path}`, {
+        headers: { Authorization: `token ${token}`, Accept: "application/vnd.github.v3+json" },
+      });
+      const getData = await getRes.json() as { sha?: string };
+      const body: Record<string, string> = {
+        message: `admin: update ${file.path}`,
+        content: Buffer.from(file.content).toString("base64"),
+      };
+      if (getData.sha) body.sha = getData.sha;
+      const putRes = await fetch(`https://api.github.com/repos/${repo}/contents/${file.path}`, {
+        method: "PUT",
+        headers: { Authorization: `token ${token}`, "Content-Type": "application/json", Accept: "application/vnd.github.v3+json" },
+        body: JSON.stringify(body),
+      });
+      if (putRes.status === 200 || putRes.status === 201) {
+        pushed.push(file.path);
+      } else {
+        errors.push(`GitHub Fehler ${putRes.status}: ${file.path}`);
+      }
+    } catch (e) {
+      errors.push(`Netzwerk-Fehler: ${file.path}`);
+    }
+  }
+  return { pushed, errors };
 }
 
 router.get("/admin/status", (req: Request, res: Response) => {
@@ -48,11 +116,32 @@ router.get("/admin/status", (req: Request, res: Response) => {
   res.json({ isAdmin: isAdmin(req) });
 });
 
+router.get("/admin/files", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) { res.status(403).json({ error: "Zugriff verweigert" }); return; }
+  const files = await readSourceFiles();
+  res.json({ files: files.map(f => ({ path: f.path, size: f.content.length })) });
+});
+
+router.post("/admin/file", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) { res.status(403).json({ error: "Zugriff verweigert" }); return; }
+  const { path: filePath } = req.body as { path: string };
+  if (!filePath) { res.status(400).json({ error: "Pfad fehlt" }); return; }
+  try {
+    const content = await fs.readFile(path.join(REPO_ROOT, filePath), "utf-8");
+    res.json({ content });
+  } catch {
+    res.status(404).json({ error: "Datei nicht gefunden" });
+  }
+});
 
 router.post("/admin/chat", async (req: Request, res: Response) => {
   if (!isAdmin(req)) { res.status(403).json({ error: "Zugriff verweigert" }); return; }
 
-  const { message, history = [] } = req.body as { message: string; history: { role: string; content: string }[] };
+  const { message, history = [], selectedFiles } = req.body as {
+    message: string;
+    history: { role: string; content: string }[];
+    selectedFiles?: string[];
+  };
   if (!message?.trim()) { res.status(400).json({ error: "Nachricht fehlt" }); return; }
 
   if (!req.user) { res.status(401).json({ error: "Nicht angemeldet" }); return; }
@@ -67,64 +156,70 @@ router.post("/admin/chat", async (req: Request, res: Response) => {
     nvidiaApiKey: user?.nvidiaApiKey ?? null,
   };
 
-  // Pollinations is PRIMARY for admin panel — unlimited, no rate limits, GPT-4o quality
-  // OpenRouter models only as upgrade fallbacks if user has their own key
   const support = getSupportClient();
   type FbEntry = { client: typeof primary.client; model: string };
   const primary = getAIClient(userKeys);
   const fallbackChain: FbEntry[] = [
-    { client: support.client, model: support.reviewModel }, // Pollinations — always works, no limits
+    { client: support.client, model: support.reviewModel },
   ];
-  // If user has their own API key, also try their preferred model
   const hasUserKey = !!(userKeys.openaiApiKey || userKeys.openrouterApiKey || userKeys.groqApiKey || userKeys.geminiApiKey);
   if (hasUserKey) {
     fallbackChain.unshift({ client: primary.client, model: primary.textModel });
   }
 
-  const sourceFiles = await readSourceFiles();
+  const allFiles = await readSourceFiles();
+
+  let sourceFiles: { path: string; content: string }[];
+  if (selectedFiles && selectedFiles.length > 0) {
+    sourceFiles = allFiles.filter(f => selectedFiles.includes(f.path));
+  } else {
+    sourceFiles = allFiles;
+  }
+
   const fileNames = sourceFiles.map(f => f.path).join(", ");
-  // 3000 chars per file — enough context without hitting token limits
   const fileContext = sourceFiles.map(f =>
-    `[DATEI: ${f.path}]\n\`\`\`tsx\n${f.content.length > 3000 ? f.content.slice(0, 3000) + "\n... (gekürzt)" : f.content}\n\`\`\``
+    `[DATEI: ${f.path}]\n\`\`\`tsx\n${f.content}\n\`\`\``
   ).join("\n\n---\n\n");
 
-  const systemPrompt = `Du bist ein Senior Full-Stack-Entwickler und Code-Reviewer für KI Studio — eine React+Vite+TypeScript SPA mit Express 5 Backend, Drizzle ORM, PostgreSQL und shadcn/ui Komponenten.
+  const hasGitHub = !!(process.env.GITHUB_TOKEN && process.env.GITHUB_REPO);
 
-Du bist der persönliche KI-Assistent des Admins und hast zwei Hauptaufgaben:
+  const systemPrompt = `Du bist ein Senior Full-Stack-Entwickler und der persönliche KI-Assistent von Markus (Admin) für KI Studio.
+
+Du hast VOLLSTÄNDIGEN Zugriff auf den gesamten Quellcode dieser App und kannst ALLES ändern.
 
 ## ⚠️ KRITISCHE REGEL — HALLUZINATIONEN VERBOTEN
-Dir wurden GENAU diese Quelldateien übergeben: ${fileNames}
-Du darfst NUR Dateipfade und Komponenten erwähnen die in diesen Dateien tatsächlich vorkommen.
-NIEMALS Dateinamen, Komponenten oder Hooks erfinden die nicht in den Quelldateien stehen.
-Wenn du dir bei einer Datei nicht sicher bist — schreib "nicht im Kontext vorhanden" statt etwas zu erfinden.
+Du hast GENAU diese Dateien: ${fileNames}
+Erwähne NUR Dateipfade und Komponenten die in diesen Dateien existieren.
+Erfinde NIEMALS Dateinamen oder Komponenten die nicht im Code stehen.
 
 ## 1. BERATUNG & ANALYSE
-Wenn der Admin nach Analyse, Empfehlungen, Bugs oder Informationen fragt:
+Bei Fragen, Analyse, Bugs oder Verbesserungsvorschlägen:
 - Antworte ausführlich und konkret auf Deutsch
-- Beziehe dich ausschließlich auf echten Code aus den oben gelisteten Quelldateien
-- Nutze **Markdown-Formatierung** (Fettschrift, Listen, Überschriften) für Lesbarkeit
-- Erkläre WARUM etwas ein Problem ist, zeige die genaue Zeile/Funktion aus dem echten Code
-- Priorisiere Empfehlungen: 🔴 Kritisch / 🟡 Mittel / 🟢 Nice-to-have
+- Nutze **Markdown-Formatierung** für Lesbarkeit
+- Erkläre WARUM etwas ein Problem ist, zeige genaue Zeile/Funktion aus dem echten Code
+- Priorisiere: 🔴 Kritisch / 🟡 Mittel / 🟢 Nice-to-have
 - Kein __CHANGES__ Block bei reiner Analyse
 
 ## 2. CODE-ÄNDERUNGEN
-Wenn der Admin eine Änderung möchte:
-- Erkläre zuerst kurz was du änderst und warum
+Wenn Markus eine Änderung möchte:
+- Erkläre kurz was du änderst und warum
 - Hänge Änderungen AM ENDE in GENAU diesem Format an:
   __CHANGES__{"files":[{"path":"PFAD_VOM_REPO_ROOT","content":"VOLLSTÄNDIGER_DATEIINHALT"}]}__END__
-- IMMER den vollständigen Dateiinhalt — nie Ausschnitte
-- Nur Dateien in artifacts/ki-studio/src/ oder artifacts/api-server/src/
+- IMMER den vollständigen Dateiinhalt — nie Ausschnitte oder "..." Platzhalter
+- Erlaubte Pfade: artifacts/ki-studio/src/, artifacts/api-server/src/, lib/db/src/, lib/api-spec/
 - TypeScript-Typen korrekt, alle Imports vorhanden
+${hasGitHub ? "- Änderungen werden automatisch auf GitHub gepusht → Render deployt danach automatisch" : "- Hinweis: GITHUB_TOKEN nicht gesetzt — Änderungen gelten nur lokal"}
 
 ## TECH-STACK
 - Frontend: React 18, Vite, TypeScript, TanStack Query, wouter, shadcn/ui, Tailwind CSS
 - Backend: Express 5, Node.js 24, TypeScript, esbuild bundle
 - DB: PostgreSQL + Drizzle ORM, Zod v4 validation
 - Auth: bcrypt + session-based (keine JWTs)
-- AI: OpenRouter → Pollinations → weitere Fallbacks (Fallback-Kette)
+- AI: Pollinations (GPT-OSS) → OpenRouter Free Models → user keys
 - Monorepo: pnpm workspaces, lib/db, lib/api-spec, artifacts/
+- GitHub → Render auto-deploy (Node.js, Oregon)
 
-## AKTUELLE QUELLDATEIEN
+## VOLLSTÄNDIGER QUELLCODE
 
 ${fileContext}`;
 
@@ -140,7 +235,6 @@ ${fileContext}`;
   const isRetryable = (e: unknown) => {
     const s = (e as { status?: number })?.status;
     const msg = e instanceof Error ? e.message : String(e);
-    // Retry on rate-limit (429) OR model-not-found (404) — both mean "try next model"
     return s === 429 || s === 404
       || msg.includes("429") || msg.includes("404")
       || msg.toLowerCase().includes("rate limit")
@@ -158,15 +252,14 @@ ${fileContext}`;
       const completion = await entry.client.chat.completions.create({
         model: entry.model,
         messages,
-        max_tokens: 8000,
+        max_tokens: 16000,
       });
       const content = completion.choices[0]?.message?.content ?? "";
       res.json({ content });
       return;
     } catch (err: unknown) {
       lastErr = err;
-      if (!isRetryable(err)) break; // hard error: stop trying
-      // 429 or 404: try next model in chain
+      if (!isRetryable(err)) break;
     }
   }
 
@@ -180,21 +273,27 @@ ${fileContext}`;
 router.post("/admin/apply", async (req: Request, res: Response) => {
   if (!isAdmin(req)) { res.status(403).json({ error: "Zugriff verweigert" }); return; }
 
-  const { files } = req.body as { files: { path: string; content: string }[] };
+  const { files, pushGitHub = true } = req.body as { files: { path: string; content: string }[]; pushGitHub?: boolean };
   if (!Array.isArray(files) || files.length === 0) {
     res.status(400).json({ error: "Keine Dateien angegeben" }); return;
   }
 
-  const allowedPrefixes = ["artifacts/ki-studio/src/", "artifacts/api-server/src/"];
+  const allowedPrefixes = [
+    "artifacts/ki-studio/src/",
+    "artifacts/api-server/src/",
+    "lib/db/src/",
+    "lib/api-spec/",
+  ];
   const applied: string[] = [];
   const errors: string[] = [];
+  const toGitHub: { path: string; content: string }[] = [];
 
   for (const file of files) {
     const normalPath = path.normalize(file.path).replace(/\\/g, "/");
     if (!allowedPrefixes.some(p => normalPath.startsWith(p))) {
       errors.push(`Nicht erlaubter Pfad: ${file.path}`); continue;
     }
-    if (!/\.(ts|tsx|css|json)$/.test(normalPath)) {
+    if (!/\.(ts|tsx|css|json|yaml|md)$/.test(normalPath)) {
       errors.push(`Dateityp nicht erlaubt: ${file.path}`); continue;
     }
     try {
@@ -202,12 +301,18 @@ router.post("/admin/apply", async (req: Request, res: Response) => {
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, file.content, "utf-8");
       applied.push(normalPath);
+      toGitHub.push({ path: normalPath, content: file.content });
     } catch {
       errors.push(`Schreibfehler: ${file.path}`);
     }
   }
 
-  res.json({ applied, errors });
+  let gitHubResult: { pushed: string[]; errors: string[] } | null = null;
+  if (pushGitHub && toGitHub.length > 0) {
+    gitHubResult = await pushToGitHub(toGitHub);
+  }
+
+  res.json({ applied, errors, gitHub: gitHubResult });
 });
 
 export default router;
