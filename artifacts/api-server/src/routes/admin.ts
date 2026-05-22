@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import fs from "fs/promises";
 import path from "path";
-import { getAIClient, getSupportClient } from "@workspace/integrations-openai-ai-server";
+import { getAIClient } from "@workspace/integrations-openai-ai-server";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
@@ -71,12 +71,9 @@ router.post("/admin/chat", async (req: Request, res: Response) => {
     nvidiaApiKey: user?.nvidiaApiKey ?? null,
   };
 
-  const hasUserKey = !!(userKeys.openrouterApiKey || userKeys.nvidiaApiKey || userKeys.groqApiKey || userKeys.geminiApiKey || userKeys.openaiApiKey || userKeys.mistralApiKey);
-  const aiClientRaw = hasUserKey ? getAIClient(userKeys) : getSupportClient();
-  const aiClient = {
-    client: aiClientRaw.client,
-    textModel: "textModel" in aiClientRaw ? aiClientRaw.textModel : aiClientRaw.reviewModel,
-  };
+  // getAIClient handles the full priority chain:
+  // user keys → server OPENROUTER_API_KEY (Render) → Replit AI Integration → Pollinations
+  const { client: aiClientObj, textModel } = getAIClient(userKeys);
 
   const sourceFiles = await readSourceFiles();
   const fileContext = sourceFiles.map(f =>
@@ -127,8 +124,8 @@ ${fileContext}`;
   ];
 
   try {
-    const completion = await aiClient.client.chat.completions.create({
-      model: aiClient.textModel,
+    const completion = await aiClientObj.chat.completions.create({
+      model: textModel,
       messages,
       max_tokens: 8000,
     });
@@ -136,7 +133,11 @@ ${fileContext}`;
     res.json({ content });
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : "KI-Fehler";
-    res.status(502).json({ error: `KI-Fehler: ${errMsg}` });
+    const isRateLimit = errMsg.includes("429") || errMsg.toLowerCase().includes("rate limit");
+    const userMsg = isRateLimit
+      ? "KI momentan ausgelastet (Rate-Limit). Bitte in 1-2 Minuten erneut versuchen."
+      : `KI-Fehler: ${errMsg.slice(0, 200)}`;
+    res.status(502).json({ error: userMsg });
   }
 });
 
