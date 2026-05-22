@@ -158,9 +158,8 @@ export function getAIClient(keys: UserApiKeys): AIClient {
 
 /**
  * Returns a Pollinations client that is ALWAYS available (no API key needed).
- * Used as a support/review AI regardless of which primary provider is active.
- * reviewModel = openai (GPT-4o equiv) — best reasoning for catching bugs
- * codeReviewModel = openai — the only reliable model on Pollinations legacy API
+ * Only "openai" / "openai-fast" work on the current Pollinations API (same model: GPT-OSS 20B).
+ * All other models (mistral, llama, deepseek-r1 etc.) return 404 on the legacy endpoint.
  */
 export function getSupportClient(): { client: OpenAI; reviewModel: string; codeReviewModel: string } {
   return {
