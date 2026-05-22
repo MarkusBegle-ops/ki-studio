@@ -16,13 +16,16 @@ function isAdmin(req: Request): boolean {
   return req.user.email === adminEmail;
 }
 
-// Reduced file list — only the most critical files to keep token count low
 const KEY_FILES = [
   "artifacts/ki-studio/src/App.tsx",
+  "artifacts/ki-studio/src/pages/home.tsx",
   "artifacts/ki-studio/src/pages/project-editor.tsx",
+  "artifacts/ki-studio/src/pages/new-project.tsx",
   "artifacts/ki-studio/src/components/admin-panel.tsx",
+  "artifacts/ki-studio/src/components/layout/app-layout.tsx",
   "artifacts/api-server/src/routes/projects/index.ts",
   "artifacts/api-server/src/routes/admin.ts",
+  "artifacts/api-server/src/index.ts",
   "lib/db/src/schema/projects.ts",
   "lib/db/src/schema/auth.ts",
 ];
@@ -86,22 +89,29 @@ router.post("/admin/chat", async (req: Request, res: Response) => {
   }
 
   const sourceFiles = await readSourceFiles();
-  // Limit each file to 1500 chars to keep total token count manageable
+  const fileNames = sourceFiles.map(f => f.path).join(", ");
+  // 3000 chars per file — enough context without hitting token limits
   const fileContext = sourceFiles.map(f =>
-    `[DATEI: ${f.path}]\n\`\`\`tsx\n${f.content.length > 1500 ? f.content.slice(0, 1500) + "\n... (gekürzt)" : f.content}\n\`\`\``
+    `[DATEI: ${f.path}]\n\`\`\`tsx\n${f.content.length > 3000 ? f.content.slice(0, 3000) + "\n... (gekürzt)" : f.content}\n\`\`\``
   ).join("\n\n---\n\n");
 
   const systemPrompt = `Du bist ein Senior Full-Stack-Entwickler und Code-Reviewer für KI Studio — eine React+Vite+TypeScript SPA mit Express 5 Backend, Drizzle ORM, PostgreSQL und shadcn/ui Komponenten.
 
 Du bist der persönliche KI-Assistent des Admins und hast zwei Hauptaufgaben:
 
+## ⚠️ KRITISCHE REGEL — HALLUZINATIONEN VERBOTEN
+Dir wurden GENAU diese Quelldateien übergeben: ${fileNames}
+Du darfst NUR Dateipfade und Komponenten erwähnen die in diesen Dateien tatsächlich vorkommen.
+NIEMALS Dateinamen, Komponenten oder Hooks erfinden die nicht in den Quelldateien stehen.
+Wenn du dir bei einer Datei nicht sicher bist — schreib "nicht im Kontext vorhanden" statt etwas zu erfinden.
+
 ## 1. BERATUNG & ANALYSE
 Wenn der Admin nach Analyse, Empfehlungen, Bugs oder Informationen fragt:
 - Antworte ausführlich und konkret auf Deutsch
+- Beziehe dich ausschließlich auf echten Code aus den oben gelisteten Quelldateien
 - Nutze **Markdown-Formatierung** (Fettschrift, Listen, Überschriften) für Lesbarkeit
-- Erkläre WARUM etwas ein Problem ist oder verbessert werden könnte
-- Priorisiere Empfehlungen nach Wichtigkeit (🔴 Kritisch / 🟡 Mittel / 🟢 Nice-to-have)
-- Zeige konkrete Code-Beispiele wo sinnvoll
+- Erkläre WARUM etwas ein Problem ist, zeige die genaue Zeile/Funktion aus dem echten Code
+- Priorisiere Empfehlungen: 🔴 Kritisch / 🟡 Mittel / 🟢 Nice-to-have
 - Kein __CHANGES__ Block bei reiner Analyse
 
 ## 2. CODE-ÄNDERUNGEN
@@ -113,12 +123,12 @@ Wenn der Admin eine Änderung möchte:
 - Nur Dateien in artifacts/ki-studio/src/ oder artifacts/api-server/src/
 - TypeScript-Typen korrekt, alle Imports vorhanden
 
-## TECH-STACK (für präzise Empfehlungen)
+## TECH-STACK
 - Frontend: React 18, Vite, TypeScript, TanStack Query, wouter, shadcn/ui, Tailwind CSS
 - Backend: Express 5, Node.js 24, TypeScript, esbuild bundle
 - DB: PostgreSQL + Drizzle ORM, Zod v4 validation
 - Auth: bcrypt + session-based (keine JWTs)
-- AI: OpenRouter → NVIDIA → Groq → Gemini → OpenAI → Mistral → Pollinations (Fallback-Kette)
+- AI: OpenRouter → Pollinations → weitere Fallbacks (Fallback-Kette)
 - Monorepo: pnpm workspaces, lib/db, lib/api-spec, artifacts/
 
 ## AKTUELLE QUELLDATEIEN
