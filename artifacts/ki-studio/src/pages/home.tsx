@@ -398,7 +398,7 @@ export default function Home() {
                             variant="ghost"
                             size="icon"
                             className="absolute top-3 right-3 h-7 w-7 opacity-40 hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10 z-10"
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            onClick={(e) => e.stopPropagation()}
                             data-testid={`button-delete-project-${project.id}`}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
